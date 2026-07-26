@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default desktop capability",
+  "windows": ["main", "db-status", "veteran-browser", "legacy-planner", "worker-status", "dev-tools", "race-dump", "race-dump-detail", "api-config"],
+  "permissions": ["core:default"]
+}

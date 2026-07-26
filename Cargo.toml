@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "shared", 
+    "honse-worker", 
+    "honse-helper", 
+    "honse-helper/src-tauri", 
+    "il2cpp_runtime", 
+    "honse-explorer", 
+    "uma-moe-api"
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Mike The Maverick"]
+edition = "2021"

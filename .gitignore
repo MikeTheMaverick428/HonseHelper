@@ -1,0 +1,7 @@
+.opencode
+.vscode
+.VSCodeCounter
+dist
+target
+.env
+gen
