@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{db_models::UmaHash, legacy_planner::SparkGroupInfo};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SparkFilter {
     pub group_id: i32,
     pub min_stars: Option<i32>,
@@ -10,6 +10,46 @@ pub struct SparkFilter {
     pub on_trainee: bool,
     pub shared_count: Option<i8>,
     pub spark_type: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct WhiteSparkFilter {
+    pub group_ids: Vec<i64>,
+    pub min_stars: Option<i32>,
+    pub max_stars: Option<i32>,
+    pub on_trainee: bool,
+    pub shared_count: Option<i8>,
+}
+
+impl WhiteSparkFilter {
+    pub fn matches(&self, group: &SparkGroupInfo, skip_group_id: bool) -> bool {
+        if !skip_group_id && !self.group_ids.contains(&(group.spark_group_id as i64)) {
+            return false;
+        }
+
+        if self.on_trainee && group.trainee_stars_veteran <= 0 {
+            return false;
+        }
+
+        if let Some(shared_count) = self.shared_count {
+            if group.uma_count < shared_count {
+                return false;
+            }
+        }
+
+        let total_stars = if self.on_trainee {
+            group.trainee_stars_veteran as i32
+        } else {
+            group.total_stars as i32
+        };
+
+        match (self.min_stars, self.max_stars) {
+            (Some(min), Some(max)) => total_stars >= min && total_stars <= max,
+            (Some(min), None) => total_stars >= min,
+            (None, Some(max)) => total_stars <= max,
+            (None, None) => true,
+        }
+    }
 }
 
 impl SparkFilter {
@@ -231,9 +271,9 @@ impl Into<u8> for AptitudeType {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum Filter {
-    TraineeHash(UmaHash),
-    ParentHash(UmaHash),
-    HasParent(UmaHash),
+    TraineeHash(Vec<UmaHash>),
+    ParentHash(Vec<UmaHash>),
+    HasParent(Vec<UmaHash>),
     Ranking {
         min: Option<i64>,
         max: Option<i64>,
@@ -280,6 +320,8 @@ pub enum Filter {
     IsIndependentTrainer {
         is_independent: bool,
     },
+    TrainerId(Vec<i64>),
+    WhiteSpark(WhiteSparkFilter),
 }
 
 impl Filter {

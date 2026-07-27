@@ -11,3 +11,5 @@ pub mod sort_selector;
 pub mod spark_filter_input;
 pub mod spark_item;
 pub mod veteran_card;
+pub mod multi_searchable_select;
+pub mod multi_values_filter;

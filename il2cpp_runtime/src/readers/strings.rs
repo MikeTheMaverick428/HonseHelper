@@ -41,11 +41,11 @@ pub fn describe_object<C: RuntimeReaderContext + ?Sized>(
 
     let namespace_ptr = ctx
         .process_memory()
-        .read_pointer(class_ptr + IL2CPP_CLASS_NAMESPACE_PTR_OFFSET)
+        .read_pointer(class_ptr.wrapping_add(IL2CPP_CLASS_NAMESPACE_PTR_OFFSET))
         .unwrap_or(0);
     let name_ptr = ctx
         .process_memory()
-        .read_pointer(class_ptr + IL2CPP_CLASS_NAME_PTR_OFFSET)
+        .read_pointer(class_ptr.wrapping_add(IL2CPP_CLASS_NAME_PTR_OFFSET))
         .unwrap_or(0);
 
     let namespace = read_c_string(ctx, namespace_ptr, 128).unwrap_or_default();
@@ -81,13 +81,13 @@ pub fn read_string_from_pointer<C: RuntimeReaderContext + ?Sized>(
 
     let length = ctx
         .process_memory()
-        .read_i32(string_ptr + IL2CPP_OBJECT_HEADER_SIZE)?;
+        .read_i32(string_ptr.wrapping_add(IL2CPP_OBJECT_HEADER_SIZE))?;
     if length <= 0 || length > 1_000_000 {
         return Ok(String::new());
     }
 
     let bytes = ctx.process_memory().read_bytes(
-        string_ptr + IL2CPP_OBJECT_HEADER_SIZE + 4,
+        string_ptr.wrapping_add(IL2CPP_OBJECT_HEADER_SIZE + 4),
         length as usize * 2,
     )?;
 

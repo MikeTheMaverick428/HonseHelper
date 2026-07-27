@@ -783,11 +783,21 @@ pub fn VeteranBrowser() -> Html {
     let active_spark_group_ids = {
         let mut ids = Vec::new();
         for f in filters.iter() {
-            if let Filter::Spark(sp) = f {
-                let gid = sp.group_id as i64;
-                if !ids.contains(&gid) {
-                    ids.push(gid);
+            match f {
+                Filter::Spark(sp) => {
+                    let gid = sp.group_id as i64;
+                    if !ids.contains(&gid) {
+                        ids.push(gid);
+                    }
                 }
+                Filter::WhiteSpark(wsf) => {
+                    for gid in &wsf.group_ids {
+                        if !ids.contains(gid) {
+                            ids.push(*gid);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         ids

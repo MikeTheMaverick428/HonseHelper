@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use nohash_hasher::{IntMap, IntSet};
 use rusqlite::Connection;
 use shared::{
-    filters::{AptitudeType, Filter, SparkFilter},
+    filters::{AptitudeType, Filter, SparkFilter, WhiteSparkFilter},
     legacy_planner::{
         lookup_dtos::{PaginatedVeteranHash, SlimUma, SlimUmaGroup},
         LegacyPlannerSlot, LegacyPlannerState,
@@ -822,19 +822,40 @@ impl VeteranStore {
 
         for filter in filters {
             match filter {
-                Filter::TraineeHash(h) => {
-                    clauses.push("v.hash = ?".to_string());
-                    params.push(Box::new(h.as_i64()));
+                Filter::TraineeHash(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.hash IN ({})", placeholders.join(",")));
+                        for h in hashes {
+                            params.push(Box::new(h.as_i64()));
+                        }
+                    }
                 }
-                Filter::ParentHash(h) => {
-                    clauses.push("v.min_hash = ?".to_string());
-                    params.push(Box::new(h.as_i64()));
+                Filter::ParentHash(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.min_hash IN ({})", placeholders.join(",")));
+                        for h in hashes {
+                            params.push(Box::new(h.as_i64()));
+                        }
+                    }
                 }
-                Filter::HasParent(h) => {
-                    clauses.push("(v.parent_a = ? OR v.parent_b = ?)".to_string());
-                    let h = h.as_i64();
-                    params.push(Box::new(h));
-                    params.push(Box::new(h));
+                Filter::HasParent(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        let joined = placeholders.join(",");
+                        clauses.push(format!(
+                            "(v.parent_a IN ({joined}) OR v.parent_b IN ({joined}))"
+                        ));
+                        for h in hashes {
+                            let v = h.as_i64();
+                            params.push(Box::new(v));
+                            params.push(Box::new(v));
+                        }
+                    }
                 }
                 Filter::Ranking { min, max } => {
                     let min_val = min.unwrap_or(0);
@@ -984,12 +1005,62 @@ impl VeteranStore {
                         "v.owned = 1".to_string()
                     });
                 }
+                Filter::WhiteSpark(wsf) => {
+                    let mut sub_clauses: Vec<String> = Vec::new();
+                    if !wsf.group_ids.is_empty() {
+                        let placeholders: Vec<String> =
+                            wsf.group_ids.iter().map(|_| "?".to_string()).collect();
+                        sub_clauses
+                            .push(format!("vss.spark_group_id IN ({})", placeholders.join(",")));
+                        for id in &wsf.group_ids {
+                            params.push(Box::new(*id));
+                        }
+                    }
+                    if wsf.on_trainee {
+                        sub_clauses.push("vss.veteran_level_sum > 0".to_string());
+                    }
+                    let level_col = if wsf.on_trainee {
+                        "vss.veteran_level_sum"
+                    } else {
+                        "vss.level_sum"
+                    };
+                    if let Some(min) = wsf.min_stars {
+                        sub_clauses.push(format!("{} >= ?", level_col));
+                        params.push(Box::new(i64::from(min)));
+                    }
+                    if let Some(max) = wsf.max_stars {
+                        sub_clauses.push(format!("{} <= ?", level_col));
+                        params.push(Box::new(i64::from(max)));
+                    }
+                    if let Some(shared) = wsf.shared_count {
+                        sub_clauses.push("vss.uma_count >= ?".to_string());
+                        params.push(Box::new(i64::from(shared)));
+                    }
+                    if !sub_clauses.is_empty() {
+                        clauses.push(format!(
+                            "EXISTS (SELECT 1 FROM veteran_spark_summary vss \
+                             JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+                             WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5) AND {})",
+                            sub_clauses.join(" AND ")
+                        ));
+                    }
+                }
                 Filter::IsIndependentTrainer { is_independent } => {
                     clauses.push(if *is_independent {
                         format!("v.nickname_id = {INDEPENDENT_LEARNER_NICKNAME}")
                     } else {
                         format!("v.nickname_id != {INDEPENDENT_LEARNER_NICKNAME}")
                     });
+                }
+                Filter::TrainerId(ids) => {
+                    if !ids.is_empty() {
+                        let placeholders: Vec<String> =
+                            ids.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.owner_id IN ({})", placeholders.join(",")));
+                        for id in ids {
+                            params.push(Box::new(*id));
+                        }
+                    }
                 }
             }
         }

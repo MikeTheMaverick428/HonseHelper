@@ -274,6 +274,22 @@ pub fn get_filter_options() -> Result<FilterOptions, String> {
 
     let scenarios = get_id_name_pairs(&conn, "scenario_data", None)?;
 
+    let trainers: Vec<(i64, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT owner_id, CAST(owner_id AS TEXT) FROM veterans WHERE owner_id IS NOT NULL and owned = 0 AND is_browser = 1 and active = 1 ORDER BY owner_id")
+            .map_err(|e| format!("prepare trainers query failed: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("query trainers failed: {e}"))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| format!("trainer row error: {e}"))?);
+        }
+        result
+    };
+
     let tags: Vec<String> = {
         let mut stmt = conn
             .prepare("SELECT DISTINCT t.tag_value FROM tag t JOIN veteran_has_tag vht ON vht.tag_id = t.id ORDER BY t.tag_value")
@@ -297,6 +313,7 @@ pub fn get_filter_options() -> Result<FilterOptions, String> {
         white_spark_groups,
         scenarios,
         tags,
+        trainers,
     })
 }
 

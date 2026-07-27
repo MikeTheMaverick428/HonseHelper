@@ -276,6 +276,29 @@ fn apply_filter(params: &mut SearchParams, filter: &Filter) -> Result<(), String
             }
             Ok(())
         }
+        Filter::WhiteSpark(wsf) => {
+            let spark_ids: Vec<String> = wsf
+                .group_ids
+                .iter()
+                .flat_map(|group_id| {
+                    let min = wsf.min_stars.unwrap_or(1);
+                    let max = if wsf.on_trainee {
+                        wsf.max_stars.unwrap_or(3).clamp(1, 3)
+                    } else {
+                        wsf.max_stars.unwrap_or(9).clamp(1, 9)
+                    };
+                    (min..=max).map(move |lvl| format!("{}{:02}", group_id, lvl))
+                })
+                .collect();
+            if !spark_ids.is_empty() {
+                if wsf.on_trainee {
+                    params.main_parent_white_sparks.push(spark_ids.join(","));
+                } else {
+                    params.white_sparks.push(spark_ids.join(","));
+                }
+            }
+            Ok(())
+        }
         Filter::WhiteSparkCount { min, .. } => {
             if let Some(min_val) = min {
                 params.min_white_count = Some(*min_val);

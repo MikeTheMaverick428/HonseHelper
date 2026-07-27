@@ -56,7 +56,7 @@ impl SingletonResolver {
         F: Fn(&mut ProcessMemory, u64) -> Option<u64>,
     {
         let static_fields_ptr_val = memory
-            .read_pointer(singleton_class_ptr + IL2CPP_CLASS_STATIC_FIELDS_OFFSET)
+            .read_pointer(singleton_class_ptr.wrapping_add(IL2CPP_CLASS_STATIC_FIELDS_OFFSET))
             .ok()?;
         let static_fields_abs = resolve_ptr(memory, static_fields_ptr_val)?;
 
@@ -107,13 +107,13 @@ impl SingletonResolver {
         while current != 0 && depth < 16 {
             depth += 1;
 
-            if let Ok(fields_ptr) = memory.read_pointer(current + IL2CPP_CLASS_FIELDS_PTR_OFFSET) {
+            if let Ok(fields_ptr) = memory.read_pointer(current.wrapping_add(IL2CPP_CLASS_FIELDS_PTR_OFFSET)) {
                 if fields_ptr != 0 {
                     let mut invalid_streak = 0usize;
                     for i in 0..MAX_RUNTIME_FIELDS_TO_SCAN {
-                        let base = fields_ptr + (i as u64) * FIELD_INFO_STRIDE;
+                        let base = fields_ptr.wrapping_add((i as u64) * FIELD_INFO_STRIDE);
 
-                        let name_ptr = match memory.read_pointer(base + FIELD_INFO_NAME_PTR_OFFSET)
+                        let name_ptr = match memory.read_pointer(base.wrapping_add(FIELD_INFO_NAME_PTR_OFFSET))
                         {
                             Ok(v) => v,
                             Err(_) => {
@@ -125,7 +125,7 @@ impl SingletonResolver {
                             }
                         };
 
-                        let field_offset = match memory.read_i32(base + FIELD_INFO_OFFSET_OFFSET) {
+                        let field_offset = match memory.read_i32(base.wrapping_add(FIELD_INFO_OFFSET_OFFSET)) {
                             Ok(v) => v,
                             Err(_) => {
                                 invalid_streak += 1;
@@ -152,7 +152,7 @@ impl SingletonResolver {
                 }
             }
 
-            let parent_ptr = match memory.read_pointer(current + IL2CPP_CLASS_PARENT_OFFSET) {
+            let parent_ptr = match memory.read_pointer(current.wrapping_add(IL2CPP_CLASS_PARENT_OFFSET)) {
                 Ok(v) => v,
                 Err(_) => break,
             };
