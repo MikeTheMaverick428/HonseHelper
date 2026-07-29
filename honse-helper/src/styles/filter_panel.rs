@@ -60,6 +60,7 @@ impl Style for FilterInputStyle {
             border-radius: 6px;
             padding: 7px 10px;
             font-size: 13px;
+            color-scheme: dark;
         }
     "#;
 

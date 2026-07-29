@@ -1,3 +1,4 @@
+use crate::components::date_time_selector::DateTimeRangeSelector;
 use crate::styles::{
     filter_panel::{
         FilterActionsStyle, FilterChipRemoveStyle, FilterChipStyle, FilterChipTextStyle,
@@ -9,7 +10,7 @@ use crate::styles::{
 };
 use crate::veteran_browser::components::searchable_select::{SearchableSelect, SelectOption};
 use shared::race_dump_types::RaceDumpFilter;
-use shared::RaceDumpFilterOptions;
+use shared::{DateTimeRange, RaceDumpFilterOptions};
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
@@ -65,12 +66,12 @@ fn filter_label(f: &RaceDumpFilter, options: Option<&RaceDumpFilterOptions>) -> 
             .unwrap_or_else(|| format!("Trainee: #{}", id)),
         RaceDumpFilter::VeteranHash(h) => format!("Hash: {:016x}", h),
         RaceDumpFilter::HasTag(s) => format!("Tag: {}", s),
-        RaceDumpFilter::CaptureDate { after, before } => {
+        RaceDumpFilter::CaptureDate(r) => {
             let mut s = "Date".to_string();
-            if let Some(a) = after {
+            if let Some(a) = &r.after {
                 s += &format!(" >= {}", a);
             }
-            if let Some(b) = before {
+            if let Some(b) = &r.before {
                 s += &format!(" <= {}", b);
             }
             s
@@ -622,53 +623,27 @@ struct CaptureDateFilterProps {
 
 #[function_component]
 fn CaptureDateFilter(props: &CaptureDateFilterProps) -> Html {
-    let after_val = use_state(String::new);
-    let before_val = use_state(String::new);
+    let range = use_state(|| DateTimeRange::default());
 
-    let emit_pending = {
-        let after_val = after_val.clone();
-        let before_val = before_val.clone();
+    let on_change = {
+        let range = range.clone();
         let cb = props.on_pending.clone();
-        move || {
-            let a = if after_val.is_empty() {
-                None
-            } else {
-                Some((*after_val).clone())
-            };
-            let b = if before_val.is_empty() {
-                None
-            } else {
-                Some((*before_val).clone())
-            };
-            if a.is_some() || b.is_some() {
-                cb.emit(Some(RaceDumpFilter::CaptureDate {
-                    after: a,
-                    before: b,
-                }));
-            } else {
+        Callback::from(move |r: DateTimeRange| {
+            range.set(r.clone());
+            if r.is_empty() {
                 cb.emit(None);
+            } else {
+                cb.emit(Some(RaceDumpFilter::CaptureDate(r)));
             }
-        }
+        })
     };
 
     html! {
-        <div style="margin-top: 8px;">
-            <div class={FilterRangeStyle::CLASS_NAME}>
-                <input class={FilterInputStyle::CLASS_NAME} type="text" placeholder="After (e.g. 2025-01-01)"
-                    value={(*after_val).clone()}
-                    oninput={let after_val = after_val.clone(); let emit = emit_pending.clone(); Callback::from(move |e: InputEvent| {
-                        after_val.set(e.target_unchecked_into::<HtmlInputElement>().value());
-                        emit();
-                    })} />
-                <span style="color:#64748b;">{"–"}</span>
-                <input class={FilterInputStyle::CLASS_NAME} type="text" placeholder="Before"
-                    value={(*before_val).clone()}
-                    oninput={let before_val = before_val.clone(); let emit = emit_pending.clone(); Callback::from(move |e: InputEvent| {
-                        before_val.set(e.target_unchecked_into::<HtmlInputElement>().value());
-                        emit();
-                    })} />
-            </div>
-        </div>
+        <DateTimeRangeSelector
+            value={(*range).clone()}
+            on_change={on_change}
+            show_time={true}
+        />
     }
 }
 

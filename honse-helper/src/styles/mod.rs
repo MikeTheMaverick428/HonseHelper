@@ -1,5 +1,6 @@
 pub mod app;
 pub mod custom_select;
+pub mod date_time_selector;
 pub mod db_status;
 pub mod detail_modal;
 pub mod filter_panel;

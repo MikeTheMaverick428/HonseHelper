@@ -10,7 +10,7 @@ pub struct UmaMoeClient {
 }
 
 impl UmaMoeClient {
-    const LIB_USER_AGENT: &'static str = "uma-moe-api-rs/0.1.0";
+    const LIB_USER_AGENT: &'static str = "uma-moe-api-rs/0.2.0";
 
     pub fn new() -> Self {
         let api_key = std::env::var("UMA_MOE_API_KEY").ok();
@@ -58,6 +58,15 @@ impl UmaMoeClient {
         builder
     }
 
+    async fn execute(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, ApiError> {
+        let request = builder.build()?;
+        println!("[uma-moe] {} {}", request.method(), request.url());
+        Ok(self.client.execute(request).await?)
+    }
+
     fn append_pair(qs: &mut String, key: &str, value: &str) {
         if !qs.is_empty() {
             qs.push('&');
@@ -92,8 +101,8 @@ impl UmaMoeClient {
     }
 
     fn append_vec_comma(qs: &mut String, key: &str, v: &[String]) {
-        if !v.is_empty() {
-            Self::append_pair(qs, key, &v.join(","));
+        for val in v {
+            Self::append_pair(qs, key, val);
         }
     }
 
@@ -242,7 +251,9 @@ impl UmaMoeClient {
     pub async fn search(&self, params: SearchParams) -> Result<SearchResponse, ApiError> {
         let url = self.search_url(&params, "/api/v3/search");
 
-        let response = self.build_request(reqwest::Method::GET, url).send().await?;
+        let response = self
+            .execute(self.build_request(reqwest::Method::GET, url))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -260,7 +271,9 @@ impl UmaMoeClient {
     pub async fn get_profile(&self, account_id: &str) -> Result<ProfileResponse, ApiError> {
         let url = format!("{}/api/v4/user/profile/{}", self.base_url, account_id);
 
-        let response = self.build_request(reqwest::Method::GET, url).send().await?;
+        let response = self
+            .execute(self.build_request(reqwest::Method::GET, url))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -284,7 +297,9 @@ impl UmaMoeClient {
     pub async fn count(&self, params: SearchParams) -> Result<String, ApiError> {
         let url = self.search_url(&params, "/api/v3/count");
 
-        let response = self.build_request(reqwest::Method::GET, url).send().await?;
+        let response = self
+            .execute(self.build_request(reqwest::Method::GET, url))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -324,7 +339,7 @@ impl UmaMoeClient {
             request = request.query(&[("year", y)]);
         }
 
-        let response = request.send().await?;
+        let response = self.execute(request).await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -345,11 +360,10 @@ impl UmaMoeClient {
     ) -> Result<CircleListResponse, ApiError> {
         let url = format!("{}/api/v4/circles/list", self.base_url);
 
-        let response = self
+        let builder = self
             .build_request(reqwest::Method::GET, url)
-            .query(&params)
-            .send()
-            .await?;
+            .query(&params);
+        let response = self.execute(builder).await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -370,11 +384,10 @@ impl UmaMoeClient {
     ) -> Result<MonthlyRankingsResponse, ApiError> {
         let url = format!("{}/api/v4/rankings/monthly", self.base_url);
 
-        let response = self
+        let builder = self
             .build_request(reqwest::Method::GET, url)
-            .query(&params)
-            .send()
-            .await?;
+            .query(&params);
+        let response = self.execute(builder).await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -395,11 +408,10 @@ impl UmaMoeClient {
     ) -> Result<AlltimeRankingsResponse, ApiError> {
         let url = format!("{}/api/v4/rankings/alltime", self.base_url);
 
-        let response = self
+        let builder = self
             .build_request(reqwest::Method::GET, url)
-            .query(&params)
-            .send()
-            .await?;
+            .query(&params);
+        let response = self.execute(builder).await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -417,7 +429,9 @@ impl UmaMoeClient {
     pub async fn get_circle_rank_thresholds(&self) -> Result<RankThresholdsResponse, ApiError> {
         let url = format!("{}/api/v4/circles/rank-thresholds", self.base_url);
 
-        let response = self.build_request(reqwest::Method::GET, url).send().await?;
+        let response = self
+            .execute(self.build_request(reqwest::Method::GET, url))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -438,11 +452,10 @@ impl UmaMoeClient {
     ) -> Result<GainsRankingsResponse, ApiError> {
         let url = format!("{}/api/v4/rankings/gains", self.base_url);
 
-        let response = self
+        let builder = self
             .build_request(reqwest::Method::GET, url)
-            .query(&params)
-            .send()
-            .await?;
+            .query(&params);
+        let response = self.execute(builder).await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -461,5 +474,41 @@ impl UmaMoeClient {
 impl Default for UmaMoeClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separate_filters_emit_repeated_comma_params() {
+        let params = SearchParams {
+            main_parent_white_sparks: vec![
+                "2101101,2101102,2101103".to_string(),
+                "2101301,2101302,2101303".to_string(),
+            ],
+            page: Some(0),
+            limit: Some(20),
+            sort_by: Some("affinity".to_string()),
+            sort_order: Some(SortDir::Desc),
+            ..Default::default()
+        };
+        let qs = UmaMoeClient::search_params_to_query_string(&params);
+        assert_eq!(
+            qs,
+            "page=0&limit=20&main_parent_white_sparks=2101101%2C2101102%2C2101103\
+             &main_parent_white_sparks=2101301%2C2101302%2C2101303&sort_by=affinity&sort_order=desc"
+        );
+    }
+
+    #[test]
+    fn single_filter_stays_one_comma_param() {
+        let params = SearchParams {
+            white_sparks: vec!["2101101,2101102,2101103".to_string()],
+            ..Default::default()
+        };
+        let qs = UmaMoeClient::search_params_to_query_string(&params);
+        assert_eq!(qs, "white_sparks=2101101%2C2101102%2C2101103");
     }
 }

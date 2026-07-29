@@ -1293,7 +1293,7 @@ pub fn extract_race_team_data(
         .collect();
 
     // --- 6. Metadata ---
-    let mut metadata =
+    let metadata =
         extract_race_metadata(ctx, bgm_ptr, race_type, entry_ptr).unwrap_or(Value::Map(Vec::new()));
 
     Ok(Value::Map(vec![

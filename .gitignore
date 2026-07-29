@@ -5,3 +5,4 @@ dist
 target
 .env
 gen
+docs/book

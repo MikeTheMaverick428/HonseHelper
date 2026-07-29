@@ -9,8 +9,14 @@ fn rank_tier(rank: &UmaRank) -> &'static str {
         13..=14 => "rank-tier-4",
         15..=16 => "rank-tier-5",
         17..=18 => "rank-tier-6",
-        19..=20 => "rank-tier-7",
-        21..=26 => "rank-tier-8",
+        19..=28 => "rank-tier-7",
+        29..=38 => "rank-tier-8",
+        39..=48 => "rank-tier-9",
+        49..=58 => "rank-tier-10",
+        59..=68 => "rank-tier-11",
+        69..=78 => "rank-tier-12",
+        79..=88 => "rank-tier-13",
+        89..=98 => "rank-tier-14",
         _ => "rank-tier-unknown",
     }
 }

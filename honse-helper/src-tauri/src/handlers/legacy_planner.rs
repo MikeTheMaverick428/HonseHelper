@@ -282,17 +282,10 @@ fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, 
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("collect sparks failed: {e}"))?;
 
-    // Fetch win IDs (filter to type-3 in V2 mode)
-    let win_type_filter = if crate::app_config::win_saddle_version() == 2 {
-        " AND mwd.win_saddle_type = 3"
-    } else {
-        ""
-    };
-    let win_sql = format!(
-        "SELECT vwc.win_id FROM veteran_win_count vwc \
-         JOIN major_wins_data mwd ON mwd.id = vwc.win_id \
-         WHERE vwc.veteran_hash = ?1{win_type_filter}"
-    );
+    let win_sql =
+        "SELECT vhw.win_id FROM veteran_has_win vhw \
+         JOIN major_wins_data mwd ON mwd.id = vhw.win_id \
+         WHERE vhw.veteran_hash = ?1 AND mwd.win_saddle_type = 3";
     let mut win_stmt = conn
         .prepare(&win_sql)
         .map_err(|e| format!("prepare win query failed: {e}"))?;
@@ -371,16 +364,10 @@ fn fetch_parent_uma(conn: &Connection, hash: u64) -> Result<Option<ParentUma>, S
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("collect parent sparks failed: {e}"))?;
 
-    let win_type_filter = if crate::app_config::win_saddle_version() == 2 {
-        " AND mwd.win_saddle_type = 3"
-    } else {
-        ""
-    };
-    let win_sql = format!(
+    let win_sql =
         "SELECT phw.win_id FROM parent_has_win phw \
          JOIN major_wins_data mwd ON mwd.id = phw.win_id \
-         WHERE phw.parent_hash = ?1{win_type_filter}"
-    );
+         WHERE phw.parent_hash = ?1 AND mwd.win_saddle_type = 3";
     let mut win_stmt = conn
         .prepare(&win_sql)
         .map_err(|e| format!("prepare parent win query failed: {e}"))?;
@@ -1526,7 +1513,15 @@ pub fn get_planner_inspiration_summary(
     let affinity_summary = compute_affinity_summary_internal(state, &affinity);
     let total_affinity_by_hash = affinity_summary.total_affinity_by_hash;
 
-    let mut rows: BTreeMap<i64, InspirationSummaryRow> = BTreeMap::new();
+    struct Accum {
+        spark_name: String,
+        spark_type: SparkType,
+        sum: f64,
+        not_product: f64,
+        expected_count_mode: bool,
+    }
+
+    let mut acc: BTreeMap<i64, Accum> = BTreeMap::new();
 
     let slots_with_affinity: [(&Option<LegacySlotValue>, bool); 6] = [
         (&state.parent_a, true),
@@ -1561,25 +1556,52 @@ pub fn get_planner_inspiration_summary(
                 continue;
             }
 
-            let sparking_chance = calc_spark_chance(spark.spark_type, stars, uma_affinity);
+            let pct = calc_spark_chance(spark.spark_type, stars, uma_affinity);
 
-            if let Some(existing) = rows.get_mut(&spark.spark_group_id) {
-                existing.sparking_chance += sparking_chance;
+            if let Some(entry) = acc.get_mut(&spark.spark_group_id) {
+                entry.sum += pct;
+                if !entry.expected_count_mode {
+                    entry.not_product *= 1.0 - pct / 100.0;
+                    if pct > 100.0 {
+                        entry.expected_count_mode = true;
+                    }
+                }
             } else {
-                rows.insert(
+                let exceeds = pct > 100.0;
+                acc.insert(
                     spark.spark_group_id,
-                    InspirationSummaryRow {
-                        spark_group_id: spark.spark_group_id,
+                    Accum {
                         spark_name: spark.name.clone(),
                         spark_type: spark.spark_type,
-                        sparking_chance,
+                        sum: pct,
+                        not_product: if exceeds { 0.0 } else { 1.0 - pct / 100.0 },
+                        expected_count_mode: exceeds,
                     },
                 );
             }
         }
     }
 
-    Ok(rows.into_values().collect())
+    let rows: Vec<InspirationSummaryRow> = acc
+        .into_iter()
+        .map(|(id, a)| {
+            let (sparking_chance, career_chance) = if a.expected_count_mode {
+                (a.sum, a.sum * 2.0)
+            } else {
+                let union = 100.0 * (1.0 - a.not_product);
+                (union, 100.0 * (1.0 - a.not_product * a.not_product))
+            };
+            InspirationSummaryRow {
+                spark_group_id: id,
+                spark_name: a.spark_name,
+                spark_type: a.spark_type,
+                sparking_chance,
+                career_chance,
+            }
+        })
+        .collect();
+
+    Ok(rows)
 }
 
 #[tauri::command]

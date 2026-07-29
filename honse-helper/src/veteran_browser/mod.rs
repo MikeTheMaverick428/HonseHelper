@@ -6,8 +6,7 @@ use crate::{
         gather_veterans::GatherVeteransBtnStyle,
         veteran_browser::{
             BrowserBodyStyle, BrowserEmptyStyle, BrowserErrorStyle, BrowserHeaderControlsStyle,
-            BrowserHeaderStyle, BrowserLoadingStyle, BrowserMainStyle, BrowserSidebarStyle,
-            BrowserTotalStyle, CardGridStyle, VeteranBrowserRootStyle,
+            BrowserHeaderStyle, BrowserLoadingStyle, BrowserMainStyle, BrowserSidebarStyle, CardGridStyle, VeteranBrowserRootStyle,
         },
         Style, StyleManager,
     },
@@ -990,6 +989,7 @@ pub fn VeteranBrowser() -> Html {
                         on_close={close_detail}
                         on_refresh={on_refresh}
                         api_mode={api_mode}
+                        active_spark_group_ids={active_spark_group_ids.clone()}
                     />
                 }
             }) }

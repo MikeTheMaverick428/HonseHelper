@@ -1,6 +1,6 @@
 use crate::styles::{filter_panel::*, legacy_planner::SecondaryBtnStyle, Style};
 use shared::db_models::UmaHash;
-use shared::filters::{AptitudeType, Filter};
+use shared::filters::{AptitudeType, CharacterFilter, Filter, TraineeFilter};
 use shared::veteran_browser::FilterOptions;
 use yew::prelude::*;
 
@@ -34,7 +34,6 @@ enum AddingType {
     SparkWhite,
     WhiteSparkCount,
     MajorWinsCount,
-    G1Wins,
     SpecificMajorWin,
     Aptitude,
     FavouriteMemo,
@@ -69,13 +68,19 @@ fn filter_description(f: &Filter, options: Option<&FilterOptions>) -> String {
                 format!("HasParents: {} hashes", hashes.len())
             }
         }
-        Filter::Character(id) => {
-            if let Some(opts) = options {
-                if let Some((_, name)) = opts.characters.iter().find(|(i, _)| i == id) {
-                    return format!("Character: {}", name);
+        Filter::Character(cf) => {
+            let prefix = if cf.negate { "NOT " } else { "" };
+            let suffix = if cf.on_parent { " (parent)" } else { "" };
+            if cf.ids.len() == 1 {
+                if let Some(opts) = options {
+                    if let Some((_, name)) = opts.characters.iter().find(|(i, _)| i == &cf.ids[0]) {
+                        return format!("{}Character: {}{}", prefix, name, suffix);
+                    }
                 }
+                format!("{}Character: #{}{}", prefix, cf.ids[0], suffix)
+            } else {
+                format!("{}Character: {} chars{}", prefix, cf.ids.len(), suffix)
             }
-            format!("Character: #{}", id)
         }
         Filter::Scenario(s) => {
             let name = options
@@ -84,13 +89,19 @@ fn filter_description(f: &Filter, options: Option<&FilterOptions>) -> String {
                 .unwrap_or_else(|| s.to_string());
             format!("Scenario: {}", name)
         }
-        Filter::Trainee(id) => {
-            if let Some(opts) = options {
-                if let Some((_, name)) = opts.trainees.iter().find(|(i, _)| i == id) {
-                    return format!("Trainee: {}", name);
+        Filter::Trainee(tf) => {
+            let prefix = if tf.negate { "NOT " } else { "" };
+            let suffix = if tf.on_parent { " (parent)" } else { "" };
+            if tf.ids.len() == 1 {
+                if let Some(opts) = options {
+                    if let Some((_, name)) = opts.trainees.iter().find(|(i, _)| i == &tf.ids[0]) {
+                        return format!("{}Trainee: {}{}", prefix, name, suffix);
+                    }
                 }
+                format!("{}Trainee: #{}{}", prefix, tf.ids[0], suffix)
+            } else {
+                format!("{}Trainee: {} trainees{}", prefix, tf.ids.len(), suffix)
             }
-            format!("Trainee: #{}", id)
         }
         Filter::Ranking { min, max } => {
             let mut s = "Rank".to_string();
@@ -147,25 +158,15 @@ fn filter_description(f: &Filter, options: Option<&FilterOptions>) -> String {
             }
             s
         }
-        Filter::G1Wins { min, max } => {
-            let mut s = "G1 wins".to_string();
-            if let Some(m) = min {
-                s += &format!(" >= {}", m);
-            }
-            if let Some(m) = max {
-                s += &format!(" <= {}", m);
-            }
-            s
-        }
         Filter::SpecificMajorWin {
-            major_win_id,
+            major_win_names,
             shared_with_parent,
         } => {
             let shared = match shared_with_parent {
                 Some(true) => " (shared)",
                 _ => "",
             };
-            format!("Win #{}{}", major_win_id, shared)
+            format!("Wins: {}{}", major_win_names.join(", "), shared)
         }
         Filter::Aptitude {
             aptitude_type,
@@ -265,16 +266,20 @@ fn build_add_inputs(
     add_hash: &UseStateHandle<Vec<String>>,
     add_parent_hash: &UseStateHandle<Vec<String>>,
     add_has_parent_hash: &UseStateHandle<Vec<String>>,
-    add_character_id: &UseStateHandle<Option<i64>>,
+    add_character_ids: &UseStateHandle<Vec<i64>>,
+    add_character_negate: &UseStateHandle<bool>,
+    add_character_on_parent: &UseStateHandle<bool>,
     add_scenario: &UseStateHandle<String>,
-    add_trainee_id: &UseStateHandle<Option<i64>>,
+    add_trainee_ids: &UseStateHandle<Vec<i64>>,
+    add_trainee_negate: &UseStateHandle<bool>,
+    add_trainee_on_parent: &UseStateHandle<bool>,
     add_rank_min: &UseStateHandle<String>,
     add_rank_max: &UseStateHandle<String>,
     add_white_min: &UseStateHandle<String>,
     add_white_max: &UseStateHandle<String>,
     add_wins_min: &UseStateHandle<String>,
     add_wins_both: &UseStateHandle<bool>,
-    add_win_id: &UseStateHandle<String>,
+    add_win_ids: &UseStateHandle<Vec<String>>,
     add_win_shared: &UseStateHandle<bool>,
     add_apt_field: &UseStateHandle<String>,
     add_apt_level: &UseStateHandle<String>,
@@ -282,8 +287,6 @@ fn build_add_inputs(
     add_icon_type: &UseStateHandle<String>,
     add_borrow: &UseStateHandle<String>,
     add_indep: &UseStateHandle<String>,
-    add_g1_min: &UseStateHandle<String>,
-    add_g1_max: &UseStateHandle<String>,
     add_affinity_min: &UseStateHandle<String>,
     add_tag_value: &UseStateHandle<String>,
     add_trainer_ids: &UseStateHandle<Vec<String>>,
@@ -294,6 +297,7 @@ fn build_add_inputs(
     add_spark_on_character: &UseStateHandle<bool>,
     add_spark_min_uma: &UseStateHandle<String>,
     options: &Option<FilterOptions>,
+    api_mode: bool,
 ) -> Option<Html> {
     match adding {
         AddingType::None => None,
@@ -401,18 +405,52 @@ fn build_add_inputs(
                         None => Vec::new(),
                     };
                     let on_select = {
-                        let v = add_character_id.clone();
-                        Callback::from(move |id: i64| v.set(Some(id)))
+                        let v = add_character_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            if !current.contains(&id) {
+                                current.push(id);
+                                v.set(current);
+                            }
+                        })
+                    };
+                    let on_remove = {
+                        let v = add_character_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            current.retain(|x| *x != id);
+                            v.set(current);
+                        })
+                    };
+                    let selected = (**add_character_ids).clone();
+                    let on_negate = {
+                        let v = add_character_negate.clone();
+                        Callback::from(move |_| v.set(!(*v)))
+                    };
+                    let on_parent = {
+                        let v = add_character_on_parent.clone();
+                        Callback::from(move |_| v.set(!(*v)))
                     };
                     html! {
                         <div class={FilterSectionStyle::CLASS_NAME}>
                             <label>{"Character"}</label>
-                            <SearchableSelect<i64>
+                            <MultiSearchableSelect<i64>
                                 options={opts}
                                 on_select={on_select}
-                                selected={**add_character_id}
+                                on_remove={on_remove}
+                                selected={selected}
                                 placeholder={"Search character..."}
                             />
+                            <div style="display:flex;gap:12px;margin-top:6px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                    <input type="checkbox" checked={**add_character_negate} onchange={on_negate} />
+                                    {"IS NOT"}
+                                </label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                    <input type="checkbox" checked={**add_character_on_parent} onchange={on_parent} />
+                                    {"From Parent"}
+                                </label>
+                            </div>
                         </div>
                     }
                 }
@@ -458,18 +496,52 @@ fn build_add_inputs(
                         None => Vec::new(),
                     };
                     let on_select = {
-                        let v = add_trainee_id.clone();
-                        Callback::from(move |id: i64| v.set(Some(id)))
+                        let v = add_trainee_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            if !current.contains(&id) {
+                                current.push(id);
+                                v.set(current);
+                            }
+                        })
+                    };
+                    let on_remove = {
+                        let v = add_trainee_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            current.retain(|x| *x != id);
+                            v.set(current);
+                        })
+                    };
+                    let selected = (**add_trainee_ids).clone();
+                    let on_negate = {
+                        let v = add_trainee_negate.clone();
+                        Callback::from(move |_| v.set(!(*v)))
+                    };
+                    let on_parent = {
+                        let v = add_trainee_on_parent.clone();
+                        Callback::from(move |_| v.set(!(*v)))
                     };
                     html! {
                         <div class={FilterSectionStyle::CLASS_NAME}>
                             <label>{"Trainee"}</label>
-                            <SearchableSelect<i64>
+                            <MultiSearchableSelect<i64>
                                 options={opts}
                                 on_select={on_select}
-                                selected={**add_trainee_id}
+                                on_remove={on_remove}
+                                selected={selected}
                                 placeholder={"Search trainee..."}
                             />
+                            <div style="display:flex;gap:12px;margin-top:6px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                    <input type="checkbox" checked={**add_trainee_negate} onchange={on_negate} />
+                                    {"IS NOT"}
+                                </label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                    <input type="checkbox" checked={**add_trainee_on_parent} onchange={on_parent} />
+                                    {"From Parent"}
+                                </label>
+                            </div>
                         </div>
                     }
                 }
@@ -502,7 +574,7 @@ fn build_add_inputs(
                     min_stars={(**add_spark_min).clone()} on_min_change={Callback::from(move |s| on_min.set(s))}
                     max_stars={(**add_spark_max).clone()} on_max_change={Callback::from(move |s| on_max.set(s))}
                     on_character={**add_spark_on_character} on_on_character_change={Callback::from(move |v| on_char.set(v))}
-                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} /> }
+                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} api_mode={api_mode} /> }
                 }
                 AddingType::SparkPink => {
                     let opts = options
@@ -519,7 +591,7 @@ fn build_add_inputs(
                     min_stars={(**add_spark_min).clone()} on_min_change={Callback::from(move |s| on_min.set(s))}
                     max_stars={(**add_spark_max).clone()} on_max_change={Callback::from(move |s| on_max.set(s))}
                     on_character={**add_spark_on_character} on_on_character_change={Callback::from(move |v| on_char.set(v))}
-                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} /> }
+                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} api_mode={api_mode} /> }
                 }
                 AddingType::SparkGreen => {
                     let opts = options
@@ -536,7 +608,7 @@ fn build_add_inputs(
                     min_stars={(**add_spark_min).clone()} on_min_change={Callback::from(move |s| on_min.set(s))}
                     max_stars={(**add_spark_max).clone()} on_max_change={Callback::from(move |s| on_max.set(s))}
                     on_character={**add_spark_on_character} on_on_character_change={Callback::from(move |v| on_char.set(v))}
-                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} /> }
+                    min_uma={(**add_spark_min_uma).clone()} on_min_uma_change={Callback::from(move |s| on_min_uma.set(s))} api_mode={api_mode} /> }
                 }
                 AddingType::SparkWhite => {
                     let opts = match options {
@@ -604,12 +676,14 @@ fn build_add_inputs(
                                     {" On trainee"}
                                 </label>
                             </div>
-                            <div class={FilterSectionStyle::CLASS_NAME}>
-                                <label>{"Min Shared Umas"}</label>
-                                <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Min uma count"
-                                    value={(**add_spark_min_uma).clone()}
-                                    oninput={Callback::from(move|e:InputEvent| on_min_uma.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
-                            </div>
+                            if !api_mode {
+                                <div class={FilterSectionStyle::CLASS_NAME}>
+                                    <label>{"Min Shared Umas"}</label>
+                                    <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Min uma count"
+                                        value={(**add_spark_min_uma).clone()}
+                                        oninput={Callback::from(move|e:InputEvent| on_min_uma.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
+                                </div>
+                            }
                         </>
                     }
                 }
@@ -644,36 +718,65 @@ fn build_add_inputs(
                         </div>
                     </>
                 },
-                AddingType::G1Wins => html! {
-                    <div class={FilterSectionStyle::CLASS_NAME}>
-                        <label>{"G1 Win Count"}</label>
-                        <div class={FilterRangeStyle::CLASS_NAME}>
-                            <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Min"
-                                value={(**add_g1_min).clone()}
-                                oninput={let v=add_g1_min.clone(); Callback::from(move|e:InputEvent| v.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
-                            <span class={RangeSepStyle::CLASS_NAME}>{"-"}</span>
-                            <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Max"
-                                value={(**add_g1_max).clone()}
-                                oninput={let v=add_g1_max.clone(); Callback::from(move|e:InputEvent| v.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
-                        </div>
-                    </div>
-                },
-                AddingType::SpecificMajorWin => html! {
-                    <>
-                        <div class={FilterSectionStyle::CLASS_NAME}>
-                            <label>{"Win ID"}</label>
-                            <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="win id"
-                                value={(**add_win_id).clone()}
-                                oninput={let v=add_win_id.clone(); Callback::from(move|e:InputEvent| v.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
-                        </div>
-                        <div class={FilterSectionStyle::CLASS_NAME}>
-                            <label>
-                                <input type="checkbox" checked={**add_win_shared}
-                                    onchange={let v=add_win_shared.clone(); Callback::from(move|e:Event| v.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().checked()))} />
-                                {" Shared only (count > 1)"}
-                            </label>
-                        </div>
-                    </>
+                AddingType::SpecificMajorWin => {
+                    let mut seen = std::collections::HashSet::new();
+                    let win_opts: Vec<SelectOption<String>> = match options {
+                        Some(o) => o
+                            .major_wins
+                            .iter()
+                            .filter_map(|(_, name)| {
+                                if seen.insert(name.clone()) {
+                                    Some(SelectOption {
+                                        value: name.clone(),
+                                        label: name.clone(),
+                                    })
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        None => Vec::new(),
+                    };
+                    let on_select = {
+                        let v = add_win_ids.clone();
+                        Callback::from(move |val: String| {
+                            let mut current = (*v).clone();
+                            if !current.contains(&val) {
+                                current.push(val);
+                                v.set(current);
+                            }
+                        })
+                    };
+                    let on_remove = {
+                        let v = add_win_ids.clone();
+                        Callback::from(move |val: String| {
+                            let mut current = (*v).clone();
+                            current.retain(|x| *x != val);
+                            v.set(current);
+                        })
+                    };
+                    let selected = (**add_win_ids).clone();
+                    html! {
+                        <>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"Major Win"}</label>
+                                <MultiSearchableSelect<String>
+                                    options={win_opts}
+                                    on_select={on_select}
+                                    on_remove={on_remove}
+                                    selected={selected}
+                                    placeholder={"Search major win..."}
+                                />
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>
+                                    <input type="checkbox" checked={**add_win_shared}
+                                        onchange={let v=add_win_shared.clone(); Callback::from(move|e:Event| v.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().checked()))} />
+                                    {" Shared only (count > 1)"}
+                                </label>
+                            </div>
+                        </>
+                    }
                 },
                 AddingType::Aptitude => {
                     let field_opts = vec![
@@ -968,9 +1071,13 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
     let adding = use_state(|| AddingType::None);
     let add_hash: UseStateHandle<Vec<String>> = use_state(Vec::new);
     let add_parent_hash: UseStateHandle<Vec<String>> = use_state(Vec::new);
-    let add_character_id: UseStateHandle<Option<i64>> = use_state(|| None);
+    let add_character_ids: UseStateHandle<Vec<i64>> = use_state(Vec::new);
+    let add_character_negate: UseStateHandle<bool> = use_state(|| false);
+    let add_character_on_parent: UseStateHandle<bool> = use_state(|| false);
     let add_scenario = use_state(String::new);
-    let add_trainee_id: UseStateHandle<Option<i64>> = use_state(|| None);
+    let add_trainee_ids: UseStateHandle<Vec<i64>> = use_state(Vec::new);
+    let add_trainee_negate: UseStateHandle<bool> = use_state(|| false);
+    let add_trainee_on_parent: UseStateHandle<bool> = use_state(|| false);
     let add_rank_min = use_state(String::new);
     let add_rank_max = use_state(String::new);
     let add_white_min = use_state(String::new);
@@ -980,7 +1087,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
     let add_spark_max = use_state(String::new);
     let add_wins_min = use_state(String::new);
     let add_wins_both = use_state(|| false);
-    let add_win_id = use_state(String::new);
+    let add_win_ids: UseStateHandle<Vec<String>> = use_state(Vec::new);
     let add_win_shared = use_state(|| false);
     let add_apt_field = use_state(String::new);
     let add_apt_level = use_state(String::new);
@@ -988,8 +1095,6 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
     let add_icon_type = use_state(String::new);
     let add_borrow = use_state(String::new);
     let add_indep = use_state(String::new);
-    let add_g1_min = use_state(String::new);
-    let add_g1_max = use_state(String::new);
     let add_affinity_min = use_state(String::new);
     let add_tag_value = use_state(String::new);
     let add_filter_type: UseStateHandle<String> = use_state(String::new);
@@ -1001,8 +1106,12 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
 
     let cancel_adding = {
         let adding = adding.clone();
-        let add_character_id = add_character_id.clone();
-        let add_trainee_id = add_trainee_id.clone();
+        let add_character_ids = add_character_ids.clone();
+        let add_character_negate = add_character_negate.clone();
+        let add_character_on_parent = add_character_on_parent.clone();
+        let add_trainee_ids = add_trainee_ids.clone();
+        let add_trainee_negate = add_trainee_negate.clone();
+        let add_trainee_on_parent = add_trainee_on_parent.clone();
         let add_tag_value = add_tag_value.clone();
         let add_filter_type = add_filter_type.clone();
         let add_spark_group = add_spark_group.clone();
@@ -1015,10 +1124,16 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_has_parent_hash = add_has_parent_hash.clone();
         let add_trainer_ids = add_trainer_ids.clone();
         let add_white_spark_group_ids = add_white_spark_group_ids.clone();
+        let add_win_ids = add_win_ids.clone();
+        let add_win_shared = add_win_shared.clone();
         Callback::from(move |_| {
             adding.set(AddingType::None);
-            add_character_id.set(None);
-            add_trainee_id.set(None);
+            add_character_ids.set(Vec::new());
+            add_character_negate.set(false);
+            add_character_on_parent.set(false);
+            add_trainee_ids.set(Vec::new());
+            add_trainee_negate.set(false);
+            add_trainee_on_parent.set(false);
             add_tag_value.set(String::new());
             add_filter_type.set(String::new());
             add_spark_group.set(None);
@@ -1031,14 +1146,18 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             add_has_parent_hash.set(Vec::new());
             add_trainer_ids.set(Vec::new());
             add_white_spark_group_ids.set(Vec::new());
+            add_win_ids.set(Vec::new());
+            add_win_shared.set(false);
         })
     };
 
     let reset_states = {
-        let add_character_id = add_character_id.clone();
-        let add_trainee_id = add_trainee_id.clone();
-        let add_g1_min = add_g1_min.clone();
-        let add_g1_max = add_g1_max.clone();
+        let add_character_ids = add_character_ids.clone();
+        let add_character_negate = add_character_negate.clone();
+        let add_character_on_parent = add_character_on_parent.clone();
+        let add_trainee_ids = add_trainee_ids.clone();
+        let add_trainee_negate = add_trainee_negate.clone();
+        let add_trainee_on_parent = add_trainee_on_parent.clone();
         let add_affinity_min = add_affinity_min.clone();
         let add_tag_value = add_tag_value.clone();
         let add_spark_group = add_spark_group.clone();
@@ -1051,11 +1170,15 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_has_parent_hash = add_has_parent_hash.clone();
         let add_trainer_ids = add_trainer_ids.clone();
         let add_white_spark_group_ids = add_white_spark_group_ids.clone();
+        let add_win_ids = add_win_ids.clone();
+        let add_win_shared = add_win_shared.clone();
         move || {
-            add_character_id.set(None);
-            add_trainee_id.set(None);
-            add_g1_min.set(String::new());
-            add_g1_max.set(String::new());
+            add_character_ids.set(Vec::new());
+            add_character_negate.set(false);
+            add_character_on_parent.set(false);
+            add_trainee_ids.set(Vec::new());
+            add_trainee_negate.set(false);
+            add_trainee_on_parent.set(false);
             add_affinity_min.set(String::new());
             add_tag_value.set(String::new());
             add_spark_group.set(None);
@@ -1068,6 +1191,8 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             add_has_parent_hash.set(Vec::new());
             add_trainer_ids.set(Vec::new());
             add_white_spark_group_ids.set(Vec::new());
+            add_win_ids.set(Vec::new());
+            add_win_shared.set(false);
         }
     };
 
@@ -1080,16 +1205,20 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_hash = add_hash.clone();
         let add_parent_hash = add_parent_hash.clone();
         let add_has_parent_hash = add_has_parent_hash.clone();
-        let add_character_id = add_character_id.clone();
+        let add_character_ids = add_character_ids.clone();
+        let add_character_negate = add_character_negate.clone();
+        let add_character_on_parent = add_character_on_parent.clone();
         let add_scenario = add_scenario.clone();
-        let add_trainee_id = add_trainee_id.clone();
+        let add_trainee_ids = add_trainee_ids.clone();
+        let add_trainee_negate = add_trainee_negate.clone();
+        let add_trainee_on_parent = add_trainee_on_parent.clone();
         let add_rank_min = add_rank_min.clone();
         let add_rank_max = add_rank_max.clone();
         let add_white_min = add_white_min.clone();
         let add_white_max = add_white_max.clone();
         let add_wins_min = add_wins_min.clone();
         let add_wins_both = add_wins_both.clone();
-        let add_win_id = add_win_id.clone();
+        let add_win_ids = add_win_ids.clone();
         let add_win_shared = add_win_shared.clone();
         let add_apt_field = add_apt_field.clone();
         let add_apt_level = add_apt_level.clone();
@@ -1097,8 +1226,6 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_icon_type = add_icon_type.clone();
         let add_borrow = add_borrow.clone();
         let add_indep = add_indep.clone();
-        let add_g1_min = add_g1_min.clone();
-        let add_g1_max = add_g1_max.clone();
         let add_affinity_min = add_affinity_min.clone();
         let add_tag_value = add_tag_value.clone();
         let add_filter_type = add_filter_type.clone();
@@ -1145,7 +1272,10 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                         Some(Filter::HasParent(hashes))
                     }
                 }
-                AddingType::Character => (*add_character_id).map(Filter::Character),
+                AddingType::Character => {
+                    let ids = (*add_character_ids).clone();
+                    if ids.is_empty() { None } else { Some(Filter::Character(CharacterFilter { ids, negate: *add_character_negate, on_parent: *add_character_on_parent })) }
+                }
                 AddingType::Scenario => {
                     let v = (*add_scenario).clone();
                     if v.is_empty() {
@@ -1154,7 +1284,10 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                         v.parse::<u16>().ok().map(Filter::Scenario)
                     }
                 }
-                AddingType::Trainee => (*add_trainee_id).map(Filter::Trainee),
+                AddingType::Trainee => {
+                    let ids = (*add_trainee_ids).clone();
+                    if ids.is_empty() { None } else { Some(Filter::Trainee(TraineeFilter { ids, negate: *add_trainee_negate, on_parent: *add_trainee_on_parent })) }
+                }
                 AddingType::Ranking => Some(Filter::Ranking {
                     min: add_rank_min.parse().ok(),
                     max: add_rank_max.parse().ok(),
@@ -1167,18 +1300,16 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                     min: add_wins_min.parse().ok(),
                     both: *add_wins_both,
                 }),
-                AddingType::G1Wins => Some(Filter::G1Wins {
-                    min: add_g1_min.parse().ok(),
-                    max: add_g1_max.parse().ok(),
-                }),
                 AddingType::SpecificMajorWin => {
-                    add_win_id
-                        .parse::<i64>()
-                        .ok()
-                        .map(|id| Filter::SpecificMajorWin {
-                            major_win_id: id,
+                    let names = (*add_win_ids).clone();
+                    if names.is_empty() {
+                        None
+                    } else {
+                        Some(Filter::SpecificMajorWin {
+                            major_win_names: names,
                             shared_with_parent: if *add_win_shared { Some(true) } else { None },
                         })
+                    }
                 }
                 AddingType::Aptitude => {
                     let field = (*add_apt_field).clone();
@@ -1321,6 +1452,9 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         AddingType::ParentHash => !add_parent_hash.is_empty(),
         AddingType::HasParent => !add_has_parent_hash.is_empty(),
         AddingType::TrainerId => !add_trainer_ids.is_empty(),
+        AddingType::Character => !add_character_ids.is_empty(),
+        AddingType::Trainee => !add_trainee_ids.is_empty(),
+        AddingType::SpecificMajorWin => !add_win_ids.is_empty(),
         _ => true,
     };
 
@@ -1329,16 +1463,20 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         &add_hash,
         &add_parent_hash,
         &add_has_parent_hash,
-        &add_character_id,
+        &add_character_ids,
+        &add_character_negate,
+        &add_character_on_parent,
         &add_scenario,
-        &add_trainee_id,
+        &add_trainee_ids,
+        &add_trainee_negate,
+        &add_trainee_on_parent,
         &add_rank_min,
         &add_rank_max,
         &add_white_min,
         &add_white_max,
         &add_wins_min,
         &add_wins_both,
-        &add_win_id,
+        &add_win_ids,
         &add_win_shared,
         &add_apt_field,
         &add_apt_level,
@@ -1346,8 +1484,6 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         &add_icon_type,
         &add_borrow,
         &add_indep,
-        &add_g1_min,
-        &add_g1_max,
         &add_affinity_min,
         &add_tag_value,
         &add_trainer_ids,
@@ -1358,6 +1494,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         &add_spark_on_character,
         &add_spark_min_uma,
         &props.options,
+        props.api_mode,
     );
     let add_ui = match add_ui {
         Some(inputs) => html! {
@@ -1450,7 +1587,6 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                                 SelectOption { value: "spark_white".to_string(), label: "White Spark".to_string() },
                                 SelectOption { value: "white_spark".to_string(), label: "White Spark Count".to_string() },
                                 SelectOption { value: "wins".to_string(), label: "Major Win Count".to_string() },
-                                SelectOption { value: "g1_wins".to_string(), label: "G1 Win Count".to_string() },
                                 SelectOption { value: "specific_win".to_string(), label: "Specific Major Win".to_string() },
                                 SelectOption { value: "apt".to_string(), label: "Aptitude".to_string() },
                                 SelectOption { value: "memo".to_string(), label: "Favourite Memo".to_string() },
@@ -1481,7 +1617,6 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                             "spark_white" => AddingType::SparkWhite,
                             "white_spark" => AddingType::WhiteSparkCount,
                             "wins" => AddingType::MajorWinsCount,
-                            "g1_wins" => AddingType::G1Wins,
                             "specific_win" => AddingType::SpecificMajorWin,
                             "apt" => AddingType::Aptitude,
                             "memo" => AddingType::FavouriteMemo,

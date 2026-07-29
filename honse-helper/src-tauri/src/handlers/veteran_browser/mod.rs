@@ -304,6 +304,9 @@ pub fn get_filter_options() -> Result<FilterOptions, String> {
         result
     };
 
+    let major_wins =
+        get_id_name_pairs(&conn, "major_wins_data", Some("WHERE win_saddle_type = 3"))?;
+
     Ok(FilterOptions {
         characters,
         trainees,
@@ -314,6 +317,7 @@ pub fn get_filter_options() -> Result<FilterOptions, String> {
         scenarios,
         tags,
         trainers,
+        major_wins,
     })
 }
 

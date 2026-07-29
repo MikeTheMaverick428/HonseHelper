@@ -12,7 +12,7 @@ use crate::styles::{
     race_dump::{
         RaceDumpBodyStyle, RaceDumpCardGridStyle, RaceDumpEmptyStyle, RaceDumpErrorStyle,
         RaceDumpHeaderControlsStyle, RaceDumpHeaderStyle, RaceDumpLoadingStyle, RaceDumpMainStyle,
-        RaceDumpRootStyle, RaceDumpSidebarStyle, RaceDumpTotalStyle,
+        RaceDumpRootStyle, RaceDumpSidebarStyle,
     },
     Style, StyleManager,
 };

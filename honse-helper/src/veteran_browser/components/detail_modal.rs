@@ -44,6 +44,8 @@ pub struct DetailModalProps {
     pub skills: Vec<VeteranSkillRow>,
     #[prop_or_default]
     pub support_cards: Vec<VeteranSupportCardRow>,
+    #[prop_or_default]
+    pub active_spark_group_ids: Vec<i64>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -819,7 +821,10 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
                                         { for spark_groups.iter().filter(|g| !g.is_empty()).map(|group| {
                                             html! {
                                                 <div class={SparkColorRowStyle::CLASS_NAME}>
-                                                    { for group.iter().map(|s| html! { <SparkItem spark={s.clone()} /> }) }
+                                                    { for group.iter().map(|s| {
+                                                        let highlighted = props.active_spark_group_ids.contains(&s.spark_group_id);
+                                                        html! { <SparkItem spark={s.clone()} highlighted={highlighted} /> }
+                                                    })}
                                                 </div>
                                             }
                                         })}

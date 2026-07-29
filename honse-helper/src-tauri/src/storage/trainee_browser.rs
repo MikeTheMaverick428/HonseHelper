@@ -1,8 +1,4 @@
-use rusqlite::Connection;
-use shared::{
-    models::PaginationResponse,
-    trainee_browser::{TraineeBrowserQuery, TraineeFilter, TraineePageItem, TraineeSortConfig},
-};
+use shared::trainee_browser::TraineeFilter;
 
 type SqlParam = Box<dyn rusqlite::types::ToSql>;
 

@@ -1,0 +1,10 @@
+[book]
+authors = ["Mike The Maverick"]
+language = "en"
+src = "src"
+title = "Honse Helper"
+
+[output.html]
+site-url = "/HonseHelper/"
+git-repository-url = "https://github.com/MikeTheMaverick428/HonseHelper"
+edit-url-template = "https://github.com/MikeTheMaverick428/HonseHelper/edit/main/docs/src/{path}"

@@ -164,14 +164,10 @@ impl AffinityStorage {
         self.get_for_three(a as u32, b as u32, c as u32)
     }
 
-    /// Bonus affinity from shared wins — 1 point per shared win_id (×3 when V2).
+    /// Bonus affinity from shared wins — 3 points per shared G1 win.
     pub fn shared_wins_bonus(a: &IntSet<u32>, b: &IntSet<u32>) -> u32 {
         let count = a.iter().filter(|w| b.contains(w)).count() as u32;
-        if crate::app_config::win_saddle_version() == 2 {
-            count * 3
-        } else {
-            count
-        }
+        count * 3
     }
 }
 

@@ -14,7 +14,8 @@ use shared::models::{
 use shared::mssgpack_data::MssgPackTrainedChara;
 use shared::{models::ReplayEventData, veteran_browser::TagRow};
 use shared::{
-    RaceDumpBrowserQuery, RaceDumpFilter, RaceDumpFilterOptions, RaceDumpPageItem, RaceDumpSummary,
+    date_time::normalize_bound, RaceDumpBrowserQuery, RaceDumpFilter, RaceDumpFilterOptions,
+    RaceDumpPageItem, RaceDumpSummary,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
@@ -435,7 +436,7 @@ pub fn get_race_dumps(
 
     let mut sql = r#"
         SELECT
-            rd.id, rd.capture_time, rd.race_type,
+            rd.id, datetime(rd.capture_time, 'localtime') AS capture_time, rd.race_type,
             rd.race_instance_id, rd.race_id,
             rd.distance, rd.track_id, rd.ground_type,
             rd.season, rd.weather, rd.ground_condition,
@@ -672,14 +673,14 @@ pub(crate) fn build_race_dump_where(filters: &[RaceDumpFilter]) -> (String, Vec<
                 );
                 params.push(Box::new(s.clone()));
             }
-            RaceDumpFilter::CaptureDate { after, before } => {
-                if let Some(v) = after {
-                    clauses.push("rd.capture_time >= ?".to_string());
-                    params.push(Box::new(v.clone()));
+            RaceDumpFilter::CaptureDate(r) => {
+                if let Some(v) = &r.after {
+                    clauses.push("datetime(rd.capture_time, 'localtime') >= ?".to_string());
+                    params.push(Box::new(normalize_bound(v, true).unwrap_or_else(|| v.clone())));
                 }
-                if let Some(v) = before {
-                    clauses.push("rd.capture_time <= ?".to_string());
-                    params.push(Box::new(v.clone()));
+                if let Some(v) = &r.before {
+                    clauses.push("datetime(rd.capture_time, 'localtime') <= ?".to_string());
+                    params.push(Box::new(normalize_bound(v, false).unwrap_or_else(|| v.clone())));
                 }
             }
         }
@@ -730,7 +731,7 @@ pub fn query_race_dump_page(
 
     let select_sql = format!(
         r#"SELECT
-            rd.id, rd.capture_time, rd.race_type,
+            rd.id, datetime(rd.capture_time, 'localtime') AS capture_time, rd.race_type,
             rd.race_instance_id, rd.race_id,
             rd.distance, rd.track_id, rd.ground_type,
             rd.season, rd.weather, rd.ground_condition,
@@ -869,7 +870,7 @@ pub fn get_race_dump_detail(
     let mut stmt = conn
         .prepare(r#"
             SELECT
-                rd.id, rd.capture_time, rd.race_type, rd.race_instance_id, rd.race_id,
+                rd.id, datetime(rd.capture_time, 'localtime') AS capture_time, rd.race_type, rd.race_instance_id, rd.race_id,
                 rd.distance, rd.track_id, rd.ground_type, rd.season, rd.weather, rd.ground_condition,
                 rd.turn, rd.inout, rd.champions_id, rd.league_type, rd.round, rd.frames, rd.events,
                 rdat.race_name, rdat.track_name

@@ -235,10 +235,20 @@ pub fn adapt_query(query: &VeteranBrowserQuery, chosen_character_id: Option<i64>
 
 fn apply_filter(params: &mut SearchParams, filter: &Filter) -> Result<(), String> {
     match filter {
-        Filter::Trainee(trainee_id) => {
-            params.main_parent_id.push(*trainee_id as i32);
+        Filter::Trainee(tf) if tf.on_parent => {
+            let target = if tf.negate { &mut params.exclude_parent_id } else { &mut params.parent_id };
+            for id in &tf.ids {
+                target.push(*id as i32);
+            }
             Ok(())
         }
+        Filter::Trainee(tf) => {
+            let target = if tf.negate { &mut params.exclude_main_parent_id } else { &mut params.main_parent_id };
+            for id in &tf.ids {
+                target.push(*id as i32);
+            }
+            Ok(())
+        },
         Filter::Ranking { min, .. } => {
             if let Some(min_val) = min {
                 params.parent_rank = Some(*min_val as i32);

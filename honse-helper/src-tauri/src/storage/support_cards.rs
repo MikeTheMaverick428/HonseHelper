@@ -9,21 +9,22 @@ use shared::{
 type SqlParam = Box<dyn rusqlite::types::ToSql>;
 
 const BASE_COLS: &str = "\
-    sco.support_card_id, \
+    scd.id AS support_card_id, \
     COALESCE(scd.name, '') AS name, \
     COALESCE(scd.rarity, 0) AS rarity, \
     COALESCE(scd.card_type, 0) AS card_type, \
-    sco.level, \
-    sco.max_level, \
-    sco.limit_break_count, \
-    sco.exp, \
-    sco.favorite_flag, \
-    sco.stock, \
-    COALESCE(scd.character_id, 0) AS character_id";
+    COALESCE(sco.level, 0) AS level, \
+    COALESCE(sco.max_level, 0) AS max_level, \
+    COALESCE(sco.limit_break_count, 0) AS limit_break_count, \
+    COALESCE(sco.exp, 0) AS exp, \
+    COALESCE(sco.favorite_flag, 0) AS favorite_flag, \
+    COALESCE(sco.stock, 0) AS stock, \
+    COALESCE(scd.character_id, 0) AS character_id, \
+    CASE WHEN sco.support_card_id IS NOT NULL THEN 1 ELSE 0 END AS owned";
 
 const FROM_CLAUSE: &str = "\
-    FROM support_card_owned sco \
-    LEFT JOIN support_card_data scd ON scd.id = sco.support_card_id";
+    FROM support_card_data scd \
+    LEFT JOIN support_card_owned sco ON sco.support_card_id = scd.id";
 
 fn make_page_item(row: &rusqlite::Row) -> rusqlite::Result<SupportCardPageItem> {
     Ok(SupportCardPageItem {
@@ -38,6 +39,7 @@ fn make_page_item(row: &rusqlite::Row) -> rusqlite::Result<SupportCardPageItem> 
         favorite_flag: row.get::<_, i64>(8)? != 0,
         stock: row.get(9)?,
         character_id: row.get(10)?,
+        owned: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -47,6 +49,13 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
 
     for f in filters {
         match f {
+            SupportCardFilter::Owned { owned } => {
+                if *owned {
+                    clauses.push("sco.support_card_id IS NOT NULL".into());
+                } else {
+                    clauses.push("sco.support_card_id IS NULL".into());
+                }
+            }
             SupportCardFilter::NameSearch { search_text } => {
                 if !search_text.is_empty() {
                     clauses.push("scd.name LIKE ?".to_string());
@@ -83,7 +92,7 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
                     skill_clauses.push(format!(
                         "EXISTS (SELECT 1 FROM support_card_has_skill_hint schsh \
                          JOIN skill_data sd ON sd.id = schsh.skill_id \
-                         WHERE schsh.support_card_id = sco.support_card_id AND {}= ?)", match_col
+                         WHERE schsh.support_card_id = scd.id AND {}= ?)", match_col
                     ));
                     params.push(Box::new(match_val));
                 }
@@ -99,7 +108,7 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
                          JOIN support_event_choice sec ON sec.id = ser.choice_id \
                          JOIN support_event se ON se.story_id = sec.story_id \
                          JOIN skill_data sd ON sd.id = ser.skill_id \
-                         WHERE se.support_card_id = sco.support_card_id \
+                         WHERE se.support_card_id = scd.id \
                            AND ser.reward_type = 11 AND {}= ? {})",
                         match_col, cat_filter
                     ));
@@ -113,8 +122,8 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
             SupportCardFilter::HasEffect { effect_type } => {
                 let label = SupportCardEffectType::from_raw(*effect_type).label();
                 clauses.push(
-                    "(EXISTS (SELECT 1 FROM support_card_effect sce WHERE sce.support_card_id = sco.support_card_id AND sce.effect_type = ?) \
-                      OR EXISTS (SELECT 1 FROM support_card_unique_effect_entry scue WHERE scue.support_card_id = sco.support_card_id AND scue.effect_label LIKE ?))"
+                    "(EXISTS (SELECT 1 FROM support_card_effect sce WHERE sce.support_card_id = scd.id AND sce.effect_type = ?) \
+                      OR EXISTS (SELECT 1 FROM support_card_unique_effect_entry scue WHERE scue.support_card_id = scd.id AND scue.effect_label LIKE ?))"
                         .to_string(),
                 );
                 params.push(Box::new(*effect_type));
@@ -139,7 +148,7 @@ fn build_order_clause(sort: &SupportCardSortConfig) -> String {
         "Name" => "scd.name",
         "Rarity" => "scd.rarity",
         "CardType" => "scd.card_type",
-        "Level" => "sco.level",
+        "Level" => "COALESCE(sco.level, 0)",
         _ => "scd.name",
     };
     format!("{} {}", col, dir)

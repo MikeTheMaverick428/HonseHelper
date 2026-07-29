@@ -303,6 +303,7 @@ pub struct FilterOptions {
     pub scenarios: Vec<(i64, String)>,
     pub tags: Vec<String>,
     pub trainers: Vec<(i64, String)>,
+    pub major_wins: Vec<(i64, String)>,
 }
 
 impl FilterOptions {

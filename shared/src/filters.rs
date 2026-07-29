@@ -3,6 +3,20 @@ use serde::{Deserialize, Serialize};
 use crate::{db_models::UmaHash, legacy_planner::SparkGroupInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CharacterFilter {
+    pub ids: Vec<i64>,
+    pub negate: bool,
+    pub on_parent: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TraineeFilter {
+    pub ids: Vec<i64>,
+    pub negate: bool,
+    pub on_parent: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SparkFilter {
     pub group_id: i32,
     pub min_stars: Option<i32>,
@@ -278,15 +292,11 @@ pub enum Filter {
         min: Option<i64>,
         max: Option<i64>,
     },
-    Trainee(i64),
-    Character(i64),
+    Trainee(TraineeFilter),
+    Character(CharacterFilter),
     Scenario(u16),
     Spark(SparkFilter),
     WhiteSparkCount {
-        min: Option<i32>,
-        max: Option<i32>,
-    },
-    G1Wins {
         min: Option<i32>,
         max: Option<i32>,
     },
@@ -299,7 +309,7 @@ pub enum Filter {
         both: bool,
     },
     SpecificMajorWin {
-        major_win_id: i64,
+        major_win_names: Vec<String>,
         shared_with_parent: Option<bool>,
     },
     HasFavouriteMemo {

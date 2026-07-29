@@ -38,22 +38,14 @@ fn filter_label(filter: &RaceDumpFilter) -> String {
         RaceDumpFilter::Trainee(id) => format!("Trainee ID: {}", id),
         RaceDumpFilter::VeteranHash(h) => format!("Veteran: {}", h),
         RaceDumpFilter::HasTag(s) => format!("Tag: {}", s),
-        RaceDumpFilter::CaptureDate { after, before } => {
-            let parts: Vec<&str> = vec![
-                after
-                    .as_deref()
-                    .filter(|_| true)
-                    .map(|_| "after")
-                    .unwrap_or(""),
-                before
-                    .as_deref()
-                    .filter(|_| true)
-                    .map(|_| "before")
-                    .unwrap_or(""),
-            ]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect();
+        RaceDumpFilter::CaptureDate(r) => {
+            let parts: Vec<String> = r
+                .after
+                .as_ref()
+                .map(|v| format!("after {}", v))
+                .into_iter()
+                .chain(r.before.as_ref().map(|v| format!("before {}", v)))
+                .collect();
             if parts.is_empty() {
                 "Date: any".into()
             } else {

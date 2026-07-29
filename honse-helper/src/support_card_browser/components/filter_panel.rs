@@ -45,6 +45,7 @@ pub struct ScFilterPanelProps {
 
 enum AddingType {
     None,
+    Owned,
     Name,
     Rarity,
     CardType,
@@ -56,6 +57,9 @@ enum AddingType {
 
 fn filter_description(f: &SupportCardFilter, options: &SupportCardFilterOptions) -> String {
     match f {
+        SupportCardFilter::Owned { owned } => {
+            if *owned { "Owned".to_string() } else { "Not owned".to_string() }
+        }
         SupportCardFilter::NameSearch { search_text } => format!("Name: \"{}\"", search_text),
         SupportCardFilter::Rarity { rarity } => {
             let label = options
@@ -124,10 +128,44 @@ fn build_add_inputs(
     add_skill_hint: &UseStateHandle<bool>,
     add_skill_ce: &UseStateHandle<bool>,
     add_skill_re: &UseStateHandle<bool>,
+    add_owned: &UseStateHandle<bool>,
     options: &SupportCardFilterOptions,
 ) -> Option<Html> {
     match adding {
         AddingType::None => None,
+        AddingType::Owned => {
+            let opts: Vec<SelectOption<String>> = vec![
+                SelectOption {
+                    value: "true".to_string(),
+                    label: "Owned".to_string(),
+                },
+                SelectOption {
+                    value: "false".to_string(),
+                    label: "Not owned".to_string(),
+                },
+            ];
+            let selected = if **add_owned {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            };
+            Some(html! {
+                <div class={FilterSectionStyle::CLASS_NAME}>
+                    <label>{"Status"}</label>
+                    <CustomSelect
+                        options={opts}
+                        selected={Some(selected)}
+                        on_change={
+                            let v = add_owned.clone();
+                            Callback::from(move |val: String| {
+                                v.set(val == "true");
+                            })
+                        }
+                        placeholder={"Select..."}
+                    />
+                </div>
+            })
+        }
         AddingType::Name => Some(html! {
             <div class={FilterSectionStyle::CLASS_NAME}>
                 <label>{"Name"}</label>
@@ -300,6 +338,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
     let add_skill_hint: UseStateHandle<bool> = use_state(|| true);
     let add_skill_ce: UseStateHandle<bool> = use_state(|| true);
     let add_skill_re: UseStateHandle<bool> = use_state(|| true);
+    let add_owned: UseStateHandle<bool> = use_state(|| true);
     let add_filter_type: UseStateHandle<String> = use_state(String::new);
 
     let on_change = props.on_change.clone();
@@ -316,6 +355,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         let add_skill_hint = add_skill_hint.clone();
         let add_skill_ce = add_skill_ce.clone();
         let add_skill_re = add_skill_re.clone();
+        let add_owned = add_owned.clone();
         Callback::from(move |_| {
             add_name.set(String::new());
             add_rarity.set(String::new());
@@ -328,6 +368,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
             add_skill_hint.set(true);
             add_skill_ce.set(true);
             add_skill_re.set(true);
+            add_owned.set(true);
         })
     };
 
@@ -346,10 +387,14 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         let add_skill_hint = add_skill_hint.clone();
         let add_skill_ce = add_skill_ce.clone();
         let add_skill_re = add_skill_re.clone();
+        let add_owned = add_owned.clone();
         let add_filter_type = add_filter_type.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             let new_filter = match &*adding {
+                AddingType::Owned => {
+                    Some(SupportCardFilter::Owned { owned: *add_owned })
+                }
                 AddingType::Name => {
                     let text = (*add_name).clone();
                     if text.is_empty() {
@@ -442,6 +487,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         &add_skill_hint,
         &add_skill_ce,
         &add_skill_re,
+        &add_owned,
         &props.options,
     );
     let add_ui = match add_ui {
@@ -454,6 +500,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 AddingType::HasSkill => add_skill_id.is_some(),
                 AddingType::HasEffect => add_effect_type.is_some(),
                 AddingType::Character => add_character_id.is_some(),
+                AddingType::Owned => true,
                 AddingType::None => false,
             };
             html! {
@@ -509,6 +556,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 <SearchableSelect<String>
                     options={
                         vec![
+                            SelectOption { value: "owned".to_string(), label: "Ownership".to_string() },
                             SelectOption { value: "name".to_string(), label: "Name".to_string() },
                             SelectOption { value: "rarity".to_string(), label: "Rarity".to_string() },
                             SelectOption { value: "card_type".to_string(), label: "Card Type".to_string() },
@@ -522,6 +570,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                     on_select={let a = adding.clone(); let ft = add_filter_type.clone(); Callback::from(move |val: String| {
                         ft.set(val.clone());
                         a.set(match val.as_str() {
+                            "owned" => AddingType::Owned,
                             "name" => AddingType::Name,
                             "rarity" => AddingType::Rarity,
                             "card_type" => AddingType::CardType,
