@@ -28,3 +28,4 @@ uma-moe-api = { path = "../../uma-moe-api" }
 reqwest = { version = "0.12", features = ["rustls-tls"] }
 zip = "2.2"
 sha2 = "0.10"
+opener = "0.8"

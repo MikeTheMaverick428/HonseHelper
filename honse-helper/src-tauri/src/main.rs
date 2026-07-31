@@ -119,6 +119,11 @@ async fn open_dev_tools_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    opener::open_browser(&url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn open_supplementary_data_window(app: AppHandle) -> Result<(), String> {
     let label = "supplementary-data";
     if let Some(win) = app.get_webview_window(label) {
@@ -205,6 +210,7 @@ fn main() {
             open_race_dump_window,
             open_supplementary_data_window,
             open_dev_tools_window,
+            open_url,
             handlers::start_worker,
             handlers::send_worker_request,
             handlers::save_worker_response,

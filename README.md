@@ -34,3 +34,8 @@ To compile the project yourself, you'll need:
 ## License
 
 MIT
+
+## Links
+
+- [Documentation / Manual](https://mikethemaverick428.github.io/HonseHelper/)
+- [Discord](https://discord.gg/NMhG48AZx)

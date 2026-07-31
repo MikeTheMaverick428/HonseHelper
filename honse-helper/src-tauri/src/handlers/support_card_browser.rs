@@ -409,7 +409,7 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
             )
             .map_err(|e| format!("events prepare: {e}"))?;
         let mut events = Vec::new();
-        let mut rows = stmt
+        let rows = stmt
             .query_map(params![support_card_id, chara_id], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,

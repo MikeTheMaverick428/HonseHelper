@@ -890,7 +890,7 @@ impl Il2CppMetadata {
         const FIELD_INFO_STRIDE: u64 = 32;
 
         let static_fields_ptr = memory
-            .read_pointer(singleton_class_ptr + IL2CPP_CLASS_STATIC_FIELDS_OFFSET)
+            .read_pointer(singleton_class_ptr.wrapping_add(IL2CPP_CLASS_STATIC_FIELDS_OFFSET))
             .ok()?;
         let static_fields_abs = self.resolve_ptr(memory, static_fields_ptr)?;
 
@@ -902,14 +902,14 @@ impl Il2CppMetadata {
             'outer: while current != 0 && depth < 16 {
                 depth += 1;
                 if let Ok(fields_ptr) =
-                    memory.read_pointer(current + IL2CPP_CLASS_FIELDS_PTR_OFFSET)
+                    memory.read_pointer(current.wrapping_add(IL2CPP_CLASS_FIELDS_PTR_OFFSET))
                 {
                     if fields_ptr != 0 {
                         let mut invalid_streak = 0usize;
                         for i in 0usize..256 {
-                            let base = fields_ptr + (i as u64) * FIELD_INFO_STRIDE;
+                            let base = fields_ptr.wrapping_add((i as u64) * FIELD_INFO_STRIDE);
                             let name_ptr =
-                                match memory.read_pointer(base + FIELD_INFO_NAME_PTR_OFFSET) {
+                                match memory.read_pointer(base.wrapping_add(FIELD_INFO_NAME_PTR_OFFSET)) {
                                     Ok(v) => v,
                                     Err(_) => {
                                         invalid_streak += 1;
@@ -920,7 +920,7 @@ impl Il2CppMetadata {
                                     }
                                 };
                             let field_offset =
-                                match memory.read_i32(base + FIELD_INFO_OFFSET_OFFSET) {
+                                match memory.read_i32(base.wrapping_add(FIELD_INFO_OFFSET_OFFSET)) {
                                     Ok(v) => v,
                                     Err(_) => {
                                         invalid_streak += 1;
@@ -947,7 +947,7 @@ impl Il2CppMetadata {
                         }
                     }
                 }
-                match memory.read_pointer(current + IL2CPP_CLASS_PARENT_OFFSET) {
+                match memory.read_pointer(current.wrapping_add(IL2CPP_CLASS_PARENT_OFFSET)) {
                     Ok(0) | Err(_) => break,
                     Ok(parent) => {
                         current = self.resolve_ptr(memory, parent).unwrap_or(parent);

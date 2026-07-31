@@ -111,10 +111,10 @@ pub fn SparkDisplay(props: &SparkProps) -> Html {
     };
 
     let is_highlighted = props.active_spark_filters.iter().any(|filter| {
-        if let Filter::Spark(filter) = filter {
-            filter.matches(&props.spark_info, false)
-        } else {
-            false
+        match filter {
+            Filter::Spark(f) => f.matches(&props.spark_info, false),
+            Filter::WhiteSpark(f) => f.matches(&props.spark_info, false),
+            _ => false,
         }
     });
 

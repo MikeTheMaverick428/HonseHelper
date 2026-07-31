@@ -302,6 +302,8 @@ pub struct FilterOptions {
     pub white_spark_groups: Vec<(i64, String)>,
     pub scenarios: Vec<(i64, String)>,
     pub tags: Vec<String>,
+    pub trainers: Vec<(i64, String)>,
+    pub major_wins: Vec<(i64, String)>,
 }
 
 impl FilterOptions {

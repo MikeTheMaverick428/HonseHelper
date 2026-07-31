@@ -521,6 +521,36 @@ impl Style for RankTier8Style {
     const CSS: &'static str = "{{class}} { background: #4a3a0e; color: #facc15; }";
     const CLASS_NAME: &'static str = "rank-tier-8";
 }
+pub struct RankTier9Style;
+impl Style for RankTier9Style {
+    const CSS: &'static str = "{{class}} { background: #134e4a; color: #5eead4; }";
+    const CLASS_NAME: &'static str = "rank-tier-9";
+}
+pub struct RankTier10Style;
+impl Style for RankTier10Style {
+    const CSS: &'static str = "{{class}} { background: #155e4a; color: #6ee7b7; }";
+    const CLASS_NAME: &'static str = "rank-tier-10";
+}
+pub struct RankTier11Style;
+impl Style for RankTier11Style {
+    const CSS: &'static str = "{{class}} { background: #1a4a5e; color: #67e8f9; }";
+    const CLASS_NAME: &'static str = "rank-tier-11";
+}
+pub struct RankTier12Style;
+impl Style for RankTier12Style {
+    const CSS: &'static str = "{{class}} { background: #1e3a5e; color: #7dd3fc; }";
+    const CLASS_NAME: &'static str = "rank-tier-12";
+}
+pub struct RankTier13Style;
+impl Style for RankTier13Style {
+    const CSS: &'static str = "{{class}} { background: #2e2a5e; color: #a5b4fc; }";
+    const CLASS_NAME: &'static str = "rank-tier-13";
+}
+pub struct RankTier14Style;
+impl Style for RankTier14Style {
+    const CSS: &'static str = "{{class}} { background: #3e1a5e; color: #c4b5fd; }";
+    const CLASS_NAME: &'static str = "rank-tier-14";
+}
 pub struct RankTierUnknownStyle;
 impl Style for RankTierUnknownStyle {
     const CSS: &'static str = "{{class}} { background: #1e1e1e; color: #6b7280; }";
@@ -563,4 +593,10 @@ inventory::submit! { StyleDefinition { css: RankTier5Style::CSS, selector_type: 
 inventory::submit! { StyleDefinition { css: RankTier6Style::CSS, selector_type: RankTier6Style::SELECTOR_TYPE, class_name: RankTier6Style::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: RankTier7Style::CSS, selector_type: RankTier7Style::SELECTOR_TYPE, class_name: RankTier7Style::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: RankTier8Style::CSS, selector_type: RankTier8Style::SELECTOR_TYPE, class_name: RankTier8Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier9Style::CSS, selector_type: RankTier9Style::SELECTOR_TYPE, class_name: RankTier9Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier10Style::CSS, selector_type: RankTier10Style::SELECTOR_TYPE, class_name: RankTier10Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier11Style::CSS, selector_type: RankTier11Style::SELECTOR_TYPE, class_name: RankTier11Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier12Style::CSS, selector_type: RankTier12Style::SELECTOR_TYPE, class_name: RankTier12Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier13Style::CSS, selector_type: RankTier13Style::SELECTOR_TYPE, class_name: RankTier13Style::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: RankTier14Style::CSS, selector_type: RankTier14Style::SELECTOR_TYPE, class_name: RankTier14Style::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: RankTierUnknownStyle::CSS, selector_type: RankTierUnknownStyle::SELECTOR_TYPE, class_name: RankTierUnknownStyle::CLASS_NAME } }

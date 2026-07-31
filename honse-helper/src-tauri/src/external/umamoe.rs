@@ -235,10 +235,20 @@ pub fn adapt_query(query: &VeteranBrowserQuery, chosen_character_id: Option<i64>
 
 fn apply_filter(params: &mut SearchParams, filter: &Filter) -> Result<(), String> {
     match filter {
-        Filter::Trainee(trainee_id) => {
-            params.main_parent_id.push(*trainee_id as i32);
+        Filter::Trainee(tf) if tf.on_parent => {
+            let target = if tf.negate { &mut params.exclude_parent_id } else { &mut params.parent_id };
+            for id in &tf.ids {
+                target.push(*id as i32);
+            }
             Ok(())
         }
+        Filter::Trainee(tf) => {
+            let target = if tf.negate { &mut params.exclude_main_parent_id } else { &mut params.main_parent_id };
+            for id in &tf.ids {
+                target.push(*id as i32);
+            }
+            Ok(())
+        },
         Filter::Ranking { min, .. } => {
             if let Some(min_val) = min {
                 params.parent_rank = Some(*min_val as i32);
@@ -272,6 +282,29 @@ fn apply_filter(params: &mut SearchParams, filter: &Filter) -> Result<(), String
                     Some(t) if t == 2 => params.pink_sparks.push(ids),
                     Some(t) if t == 3 => params.green_sparks.push(ids),
                     _ => params.white_sparks.push(ids),
+                }
+            }
+            Ok(())
+        }
+        Filter::WhiteSpark(wsf) => {
+            let spark_ids: Vec<String> = wsf
+                .group_ids
+                .iter()
+                .flat_map(|group_id| {
+                    let min = wsf.min_stars.unwrap_or(1);
+                    let max = if wsf.on_trainee {
+                        wsf.max_stars.unwrap_or(3).clamp(1, 3)
+                    } else {
+                        wsf.max_stars.unwrap_or(9).clamp(1, 9)
+                    };
+                    (min..=max).map(move |lvl| format!("{}{:02}", group_id, lvl))
+                })
+                .collect();
+            if !spark_ids.is_empty() {
+                if wsf.on_trainee {
+                    params.main_parent_white_sparks.push(spark_ids.join(","));
+                } else {
+                    params.white_sparks.push(spark_ids.join(","));
                 }
             }
             Ok(())

@@ -1,6 +1,8 @@
 pub mod copyable;
+pub mod date_time_selector;
 pub mod delete_button;
 pub mod delete_confirmation_modal;
+pub mod external_link;
 pub mod gather_support_cards;
 pub mod gather_trainees;
 pub mod gather_veterans;
@@ -10,7 +12,7 @@ pub mod sparks;
 pub mod tag_modal;
 pub mod wins_list;
 
-pub use crate::veteran_browser::components::searchable_select::{SearchableSelect, SelectOption};
+pub use crate::veteran_browser::components::searchable_select::SelectOption;
 
 use yew::prelude::*;
 

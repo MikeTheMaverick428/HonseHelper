@@ -87,6 +87,7 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
     };
 
     let card = &props.card;
+    let (variant_label, character_name) = parse_card_name(&card.name);
 
     let on_skill_click = {
         let selected_skill = selected_skill.clone();
@@ -105,7 +106,11 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                             {rarity_label(card.rarity)}
                         </span>
                         <span style="margin-left: 8px; font-weight: 600; font-size: 1.1em;">
-                            {&card.name}
+                            if let Some(v) = &variant_label {
+                                <span style="color:#f59e0b;font-size:0.85em;">{v}</span>
+                                {" "}
+                            }
+                            {character_name}
                         </span>
                     </div>
                     <button class={ModalCloseStyle::CLASS_NAME}
@@ -172,7 +177,6 @@ fn render_overview(
     let type_cls = type_class(card.card_type);
     let rarity_cls = rarity_class(card.rarity);
     let is_mlb = card.limit_break_count >= 4;
-    let (variant, character_name) = parse_card_name(&card.name);
     let lv = card.level;
 
     let current_effects: Vec<_> = effects
@@ -182,14 +186,6 @@ fn render_overview(
 
     html! {
         <div class={DetailTabStyle::CLASS_NAME}>
-            {if let Some(v) = &variant {
-                html! { <div class={SupportCardVariantStyle::CLASS_NAME}>{v}</div> }
-            } else {
-                html! {}
-            }}
-            <div style="font-size: 16px; font-weight: 700; color: #f1f5f9; margin-bottom: 8px;">
-                {character_name}
-            </div>
             <div class={SupportCardBadgeRowStyle::CLASS_NAME} style="margin-bottom: 12px;">
                 <span class={format!("{} {}", SupportCardRarityStyle::CLASS_NAME, rarity_cls)}>
                     {rarity_label(card.rarity)}
@@ -197,23 +193,29 @@ fn render_overview(
                 <span class={format!("{} {}", SupportCardTypeStyle::CLASS_NAME, type_cls)}>
                     {type_label(card.card_type)}
                 </span>
-                <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
-                    {(0..4).map(|i| {
-                        let on = i < card.limit_break_count as usize;
-                        html! { <span class={format!("diamond{}", if on { " on" } else { "" })}></span> }
-                    }).collect::<Html>()}
-                </span>
-                <span style="color: #9ca3af; font-size: 13px;">
-                    {format!("Lv{}/{}", lv, card.max_level)}
-                </span>
+                if card.owned {
+                    <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
+                        {(0..4).map(|i| {
+                            let on = i < card.limit_break_count as usize;
+                            html! { <span class={format!("diamond{}", if on { " on" } else { "" })}></span> }
+                        }).collect::<Html>()}
+                    </span>
+                    <span style="color: #9ca3af; font-size: 13px;">
+                        {format!("Lv{}/{}", lv, card.max_level)}
+                    </span>
+                } else {
+                    <span style="color: #ef4444; font-size: 13px; font-weight: 600;">{"Not Owned"}</span>
+                }
             </div>
-            <div style="display: flex; gap: 16px; font-size: 13px; color: #94a3b8; margin-bottom: 20px;">
-                <span>{"EXP: "}<span style="color: #e2e8f0;">{card.exp}</span></span>
-                { if card.favorite_flag { html! { <span>{"\u{2605}"}{" Favorite"}</span> } } else { html! {} } }
-                <span>{"Stock: "}<span style="color: #e2e8f0;">{card.stock}</span></span>
-            </div>
+            if card.owned {
+                <div style="display: flex; gap: 16px; font-size: 13px; color: #94a3b8; margin-bottom: 20px;">
+                    <span>{"EXP: "}<span style="color: #e2e8f0;">{card.exp}</span></span>
+                    { if card.favorite_flag { html! { <span>{"\u{2605}"}{" Favorite"}</span> } } else { html! {} } }
+                    <span>{"Stock: "}<span style="color: #e2e8f0;">{card.stock}</span></span>
+                </div>
+            }
 
-            {render_unique_section(unique, card.level)}
+            {render_unique_section(unique, card.level, card.owned)}
 
             if !current_effects.is_empty() {
                 <div style="margin-bottom: 20px;">
@@ -233,7 +235,7 @@ fn render_overview(
     }
 }
 
-fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64) -> Html {
+fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64, owned: bool) -> Html {
     match unique {
         None => html! {
             <div class={UniqueSectionStyle::CLASS_NAME}>
@@ -242,7 +244,7 @@ fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_le
             </div>
         },
         Some(ue) => {
-            let meets_level = card_level >= ue.limit_break_level;
+            let meets_level = owned && card_level >= ue.limit_break_level;
             html! {
                 <div class={UniqueSectionStyle::CLASS_NAME}>
                     <h3 class={UniqueSectionTitleStyle::CLASS_NAME}>{"Unique Effect"}</h3>

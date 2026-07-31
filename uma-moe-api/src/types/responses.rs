@@ -66,6 +66,8 @@ pub struct SearchResponse {
 pub struct UnifiedAccountRecord {
     pub account_id: String,
     pub trainer_name: String,
+    pub borrow_copy_count: i32,
+    pub borrow_view_count: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follower_num: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -148,11 +150,9 @@ pub struct VeteranFactor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessionChara {
     pub card_id: i32,
-    pub factor_id_array: Vec<i32>,
     pub factor_info_array: Vec<VeteranFactor>,
     pub owner_viewer_id: i64,
     pub position_id: i32,
-    pub race_result_list: Vec<serde_json::Value>,
     pub rank: i32,
     pub rarity: i32,
     pub talent_level: i32,
@@ -200,8 +200,10 @@ pub struct Veteran {
     pub factor_info_array: Vec<VeteranFactor>,
     pub win_saddle_id_array: Vec<i32>,
     pub succession_chara_array: Vec<SuccessionChara>,
-    pub register_time: String,
-    pub create_time: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub register_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_time: Option<String>,
     pub ingested_at: String,
     pub updated_at: String,
     pub is_pinned: bool,
@@ -277,6 +279,7 @@ pub struct TrainerInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BorrowStats {
+    pub borrow_key: String,
     pub copy_count: i32,
     pub inheritance_id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]

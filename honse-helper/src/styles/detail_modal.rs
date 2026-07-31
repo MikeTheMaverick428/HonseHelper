@@ -771,6 +771,14 @@ impl Style for SupportCardCardStyle {
             box-shadow: inset 0 0 0 1px rgba(155, 89, 182, 0.3),
                         0 0 6px rgba(155, 89, 182, 0.25);
         }
+
+        {{class}}.unowned {
+            opacity: 0.6;
+        }
+
+        {{class}}.unowned:hover {
+            opacity: 0.85;
+        }
     "#;
     const CLASS_NAME: &'static str = "support-card-card";
 }

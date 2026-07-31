@@ -512,7 +512,7 @@ impl RuntimeIntrospector {
             class_chain.push(current);
             current = self
                 .memory
-                .read_pointer(current + IL2CPP_CLASS_PARENT_OFFSET)
+                .read_pointer(current.wrapping_add(IL2CPP_CLASS_PARENT_OFFSET))
                 .unwrap_or(0);
         }
         class_chain.reverse();
@@ -529,7 +529,7 @@ impl RuntimeIntrospector {
     fn scan_runtime_fields_for_class(&mut self, class_ptr: u64) -> Result<Vec<RuntimeField>> {
         let fields_ptr = self
             .memory
-            .read_pointer(class_ptr + IL2CPP_CLASS_FIELDS_PTR_OFFSET)?;
+            .read_pointer(class_ptr.wrapping_add(IL2CPP_CLASS_FIELDS_PTR_OFFSET))?;
         if fields_ptr == 0 {
             return Ok(Vec::new());
         }
@@ -537,22 +537,22 @@ impl RuntimeIntrospector {
         let mut fields = Vec::new();
         let mut invalid_streak = 0usize;
         for i in 0..MAX_RUNTIME_FIELDS_TO_SCAN {
-            let base = fields_ptr + (i as u64) * FIELD_INFO_STRIDE;
-            let name_ptr = match self.memory.read_pointer(base + FIELD_INFO_NAME_PTR_OFFSET) {
+            let base = fields_ptr.wrapping_add((i as u64) * FIELD_INFO_STRIDE);
+            let name_ptr = match self.memory.read_pointer(base.wrapping_add(FIELD_INFO_NAME_PTR_OFFSET)) {
                 Ok(ptr) => ptr,
                 Err(_) => break,
             };
             let _type_ptr = self
                 .memory
-                .read_pointer(base + FIELD_INFO_TYPE_PTR_OFFSET)
+                .read_pointer(base.wrapping_add(FIELD_INFO_TYPE_PTR_OFFSET))
                 .unwrap_or(0);
             let owner_class = self
                 .memory
-                .read_pointer(base + FIELD_INFO_PARENT_PTR_OFFSET)
+                .read_pointer(base.wrapping_add(FIELD_INFO_PARENT_PTR_OFFSET))
                 .unwrap_or(0);
             let offset = self
                 .memory
-                .read_i32(base + FIELD_INFO_OFFSET_OFFSET)
+                .read_i32(base.wrapping_add(FIELD_INFO_OFFSET_OFFSET))
                 .unwrap_or(i32::MIN);
 
             let Some(name) = read_c_string(self, name_ptr, 128) else {

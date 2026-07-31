@@ -237,6 +237,7 @@ pub struct InspirationChanceModalProps {
 pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
     let data = use_state(Vec::<InspirationSummaryRow>::new);
     let filter_text = use_state(String::new);
+    let show_career = use_state(|| false);
     let type_filters = use_state(|| {
         vec![
             SparkType::Stat,
@@ -308,9 +309,10 @@ pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
                 true
             })
             .collect();
+        let chance_field = if *show_career { |r: &InspirationSummaryRow| r.career_chance } else { |r: &InspirationSummaryRow| r.sparking_chance };
         filtered.sort_by(|a, b| {
-            b.sparking_chance
-                .partial_cmp(&a.sparking_chance)
+            chance_field(b)
+                .partial_cmp(&chance_field(a))
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.spark_name.cmp(&b.spark_name))
         });
@@ -332,6 +334,20 @@ pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
                             oninput={on_filter_input}
                             style="background: #1f2937; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 6px 10px; font-size: 13px; flex: 1; min-width: 150px;"
                         />
+                        <button
+                            onclick={let s=show_career.clone(); Callback::from(move |_| s.set(!*s))}
+                            style={format!(
+                                "padding: 4px 10px; border-radius: 999px; border: 1px solid {}; background: {}; color: {}; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap;",
+                                if *show_career { "#f59e0b" } else { "#475569" },
+                                if *show_career { "#451a1a" } else { "transparent" },
+                                if *show_career { "#fbbf24" } else { "#94a3b8" },
+                            )}
+                        >
+                            {"Career (2 inspirations)"}
+                        </button>
+                    </div>
+
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
                         {for [SparkType::Stat, SparkType::Aptitude, SparkType::Unique, SparkType::Skill, SparkType::Race, SparkType::Scenario].iter().map(|t| {
                             let active = (*type_filters).contains(t);
                             let tt = toggle_type.clone();
@@ -358,17 +374,21 @@ pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
                                 <tr style="background: #1e293b; color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em;">
                                     <th style="padding: 8px 12px; text-align: left; border-bottom: 1px solid #334155;">{"Spark"}</th>
                                     <th style="padding: 8px 12px; text-align: left; border-bottom: 1px solid #334155;">{"Type"}</th>
-                                    <th style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #334155;">{"Sparking Chance"}</th>
+                                    <th style="padding: 8px 12px; text-align: right; border-bottom: 1px solid #334155;">
+                                        {if *show_career { "Career Chance" } else { "Sparking Chance" }}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {for filtered.iter().map(|row| {
+                                    let val = if *show_career { row.career_chance } else { row.sparking_chance };
+                                    let display = if val > 100.0 { format!("{:.2}", val) } else { format!("{:.2}%", val) };
                                     html! {
                                         <tr style="border-bottom: 1px solid #1e293b;">
                                             <td style="padding: 8px 12px; color: #f3f4f6; font-weight: 500;">{&row.spark_name}</td>
                                             <td style="padding: 8px 12px; color: #94a3b8; font-size: 12px;">{row.spark_type.label()}</td>
                                             <td style="padding: 8px 12px; text-align: right; color: #fbbf24; font-weight: 600; font-feature-settings: 'tnum' 1;">
-                                                {format!("{:.2}%", row.sparking_chance)}
+                                                {display}
                                             </td>
                                         </tr>
                                     }

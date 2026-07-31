@@ -389,10 +389,7 @@ pub enum RaceDumpFilter {
     )]
     VeteranHash(i64),
     HasTag(String),
-    CaptureDate {
-        after: Option<String>,
-        before: Option<String>,
-    },
+    CaptureDate(crate::date_time::DateTimeRange),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

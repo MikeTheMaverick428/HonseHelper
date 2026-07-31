@@ -178,13 +178,10 @@ impl VeteranStore {
         // Query 2: all veteran wins
         let mut veteran_wins: IntMap<u64, IntSet<u32>> = IntMap::default();
         {
-            let win_sql = if crate::app_config::win_saddle_version() == 2 {
-                "SELECT vwc.veteran_hash, vwc.win_id FROM veteran_win_count vwc \
-                 JOIN major_wins_data mwd ON mwd.id = vwc.win_id \
-                 WHERE mwd.win_saddle_type = 3"
-            } else {
-                "SELECT veteran_hash, win_id FROM veteran_win_count"
-            };
+            let win_sql =
+                "SELECT vhw.veteran_hash, vhw.win_id FROM veteran_has_win vhw \
+                 JOIN major_wins_data mwd ON mwd.id = vhw.win_id \
+                 WHERE mwd.win_saddle_type = 3";
             let mut win_stmt = conn
                 .prepare(win_sql)
                 .map_err(|e| format!("prepare wins query failed: {e}"))?;
@@ -234,13 +231,10 @@ impl VeteranStore {
         // Query 4: all parent wins
         let mut parent_wins: IntMap<u64, IntSet<u32>> = IntMap::default();
         {
-            let pwin_sql = if crate::app_config::win_saddle_version() == 2 {
+            let pwin_sql =
                 "SELECT phw.parent_hash, phw.win_id FROM parent_has_win phw \
                  JOIN major_wins_data mwd ON mwd.id = phw.win_id \
-                 WHERE mwd.win_saddle_type = 3"
-            } else {
-                "SELECT parent_hash, win_id FROM parent_has_win"
-            };
+                 WHERE mwd.win_saddle_type = 3";
             let mut pwin_stmt = conn
                 .prepare(pwin_sql)
                 .map_err(|e| format!("prepare parent wins query failed: {e}"))?;
@@ -822,19 +816,40 @@ impl VeteranStore {
 
         for filter in filters {
             match filter {
-                Filter::TraineeHash(h) => {
-                    clauses.push("v.hash = ?".to_string());
-                    params.push(Box::new(h.as_i64()));
+                Filter::TraineeHash(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.hash IN ({})", placeholders.join(",")));
+                        for h in hashes {
+                            params.push(Box::new(h.as_i64()));
+                        }
+                    }
                 }
-                Filter::ParentHash(h) => {
-                    clauses.push("v.min_hash = ?".to_string());
-                    params.push(Box::new(h.as_i64()));
+                Filter::ParentHash(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.min_hash IN ({})", placeholders.join(",")));
+                        for h in hashes {
+                            params.push(Box::new(h.as_i64()));
+                        }
+                    }
                 }
-                Filter::HasParent(h) => {
-                    clauses.push("(v.parent_a = ? OR v.parent_b = ?)".to_string());
-                    let h = h.as_i64();
-                    params.push(Box::new(h));
-                    params.push(Box::new(h));
+                Filter::HasParent(hashes) => {
+                    if !hashes.is_empty() {
+                        let placeholders: Vec<String> =
+                            hashes.iter().map(|_| "?".to_string()).collect();
+                        let joined = placeholders.join(",");
+                        clauses.push(format!(
+                            "(v.parent_a IN ({joined}) OR v.parent_b IN ({joined}))"
+                        ));
+                        for h in hashes {
+                            let v = h.as_i64();
+                            params.push(Box::new(v));
+                            params.push(Box::new(v));
+                        }
+                    }
                 }
                 Filter::Ranking { min, max } => {
                     let min_val = min.unwrap_or(0);
@@ -843,13 +858,53 @@ impl VeteranStore {
                     params.push(Box::new(min_val));
                     params.push(Box::new(max_val));
                 }
-                Filter::Trainee(id) => {
-                    clauses.push("v.trainee_id = ?".to_string());
-                    params.push(Box::new(*id));
+                Filter::Trainee(tf) => {
+                    if !tf.ids.is_empty() {
+                        if tf.on_parent {
+                            let op = if tf.negate { "NOT EXISTS" } else { "EXISTS" };
+                            let placeholders: Vec<String> =
+                                tf.ids.iter().map(|_| "?".to_string()).collect();
+                            clauses.push(format!(
+                                "{} (SELECT 1 FROM parents p WHERE (p.hash = v.parent_a OR p.hash = v.parent_b) AND p.trainee_id IN ({}))",
+                                op, placeholders.join(",")
+                            ));
+                            for id in &tf.ids {
+                                params.push(Box::new(*id));
+                            }
+                        } else {
+                            let op = if tf.negate { "NOT IN" } else { "IN" };
+                            let placeholders: Vec<String> =
+                                tf.ids.iter().map(|_| "?".to_string()).collect();
+                            clauses.push(format!("v.trainee_id {} ({})", op, placeholders.join(",")));
+                            for id in &tf.ids {
+                                params.push(Box::new(*id));
+                            }
+                        }
+                    }
                 }
-                Filter::Character(id) => {
-                    clauses.push("td.character_id = ?".to_string());
-                    params.push(Box::new(*id));
+                Filter::Character(cf) => {
+                    if !cf.ids.is_empty() {
+                        if cf.on_parent {
+                            let op = if cf.negate { "NOT EXISTS" } else { "EXISTS" };
+                            let placeholders: Vec<String> =
+                                cf.ids.iter().map(|_| "?".to_string()).collect();
+                            clauses.push(format!(
+                                "{} (SELECT 1 FROM parents p LEFT JOIN trainee_data td2 ON td2.id = p.trainee_id WHERE (p.hash = v.parent_a OR p.hash = v.parent_b) AND td2.character_id IN ({}))",
+                                op, placeholders.join(",")
+                            ));
+                            for id in &cf.ids {
+                                params.push(Box::new(*id));
+                            }
+                        } else {
+                            let op = if cf.negate { "NOT IN" } else { "IN" };
+                            let placeholders: Vec<String> =
+                                cf.ids.iter().map(|_| "?".to_string()).collect();
+                            clauses.push(format!("td.character_id {} ({})", op, placeholders.join(",")));
+                            for id in &cf.ids {
+                                params.push(Box::new(*id));
+                            }
+                        }
+                    }
                 }
                 Filter::Scenario(s) => {
                     clauses.push("v.scenario = ?".to_string());
@@ -866,18 +921,6 @@ impl VeteranStore {
                           FROM veteran_spark_summary vss \
                           JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
                           WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5)) \
-                         BETWEEN ? AND ?"
-                            .to_string(),
-                    );
-                    params.push(Box::new(min_val));
-                    params.push(Box::new(max_val));
-                }
-                Filter::G1Wins { min, max } => {
-                    let min_val = min.map(i64::from).unwrap_or(0);
-                    let max_val = max.map(i64::from).unwrap_or(i64::MAX);
-                    clauses.push(
-                        "(SELECT COUNT(*) FROM veteran_win_count vwc \
-                          WHERE vwc.veteran_hash = v.hash) \
                          BETWEEN ? AND ?"
                             .to_string(),
                     );
@@ -906,7 +949,26 @@ impl VeteranStore {
                 Filter::MajorWinsCount { min, both } => {
                     let min_val = i64::from(min.unwrap_or(0));
                     let max_val = i64::MAX;
-                    let subquery = if *both {
+                    let subquery = if crate::app_config::win_saddle_version() == 2 {
+                        if *both {
+                            format!(
+                                "(SELECT COUNT(*) FROM veteran_win_count vw \
+                                 JOIN major_wins_data mwd ON mwd.id = vw.win_id \
+                                 WHERE vw.veteran_hash = v.hash AND mwd.win_saddle_type = 3) \
+                                 + COALESCE((SELECT COUNT(*) FROM parent_has_win phw \
+                                  JOIN major_wins_data mwd ON mwd.id = phw.win_id \
+                                  WHERE phw.parent_hash = v.parent_a AND mwd.win_saddle_type = 3), 0) \
+                                 + COALESCE((SELECT COUNT(*) FROM parent_has_win phw \
+                                  JOIN major_wins_data mwd ON mwd.id = phw.win_id \
+                                  WHERE phw.parent_hash = v.parent_b AND mwd.win_saddle_type = 3), 0)"
+                            )
+                        } else {
+                            "(SELECT COUNT(*) FROM veteran_win_count vw \
+                             JOIN major_wins_data mwd ON mwd.id = vw.win_id \
+                             WHERE vw.veteran_hash = v.hash AND mwd.win_saddle_type = 3)"
+                                .to_string()
+                        }
+                    } else if *both {
                         format!(
                             "(SELECT COUNT(*) FROM veteran_win_count vw WHERE vw.veteran_hash = v.hash) \
                              + COALESCE((SELECT COUNT(*) FROM parent_has_win phw WHERE phw.parent_hash = v.parent_a), 0) \
@@ -921,26 +983,37 @@ impl VeteranStore {
                     params.push(Box::new(max_val));
                 }
                 Filter::SpecificMajorWin {
-                    major_win_id,
+                    major_win_names,
                     shared_with_parent,
                 } => {
-                    match shared_with_parent {
-                        Some(true) => {
-                            clauses.push(
-                                "EXISTS (SELECT 1 FROM veteran_win_count vwc \
-                                  WHERE vwc.veteran_hash = v.hash AND vwc.win_id = ? AND vwc.win_count > 1)"
-                                    .to_string(),
-                            );
+                    if !major_win_names.is_empty() {
+                        let placeholders: Vec<String> =
+                            major_win_names.iter().map(|_| "?".to_string()).collect();
+                        let in_clause = placeholders.join(",");
+                        match shared_with_parent {
+                            Some(true) => {
+                                clauses.push(format!(
+                                    "EXISTS (SELECT 1 FROM veteran_win_count vwc \
+                                     JOIN major_wins_data mwd ON mwd.id = vwc.win_id \
+                                     WHERE vwc.veteran_hash = v.hash AND mwd.name IN ({}) \
+                                     AND vwc.win_count > 1 AND mwd.win_saddle_type = 3)",
+                                    in_clause
+                                ));
+                            }
+                            _ => {
+                                clauses.push(format!(
+                                    "EXISTS (SELECT 1 FROM veteran_has_win vw \
+                                     JOIN major_wins_data mwd ON mwd.id = vw.win_id \
+                                     WHERE vw.veteran_hash = v.hash AND mwd.name IN ({}) \
+                                     AND mwd.win_saddle_type = 3)",
+                                    in_clause
+                                ));
+                            }
                         }
-                        _ => {
-                            clauses.push(
-                                "EXISTS (SELECT 1 FROM veteran_has_win vw \
-                                  WHERE vw.veteran_hash = v.hash AND vw.win_id = ?)"
-                                    .to_string(),
-                            );
+                        for name in major_win_names {
+                            params.push(Box::new(name.clone()));
                         }
                     }
-                    params.push(Box::new(*major_win_id));
                 }
                 Filter::HasFavouriteMemo { search_text } => {
                     if let Some(text) = search_text {
@@ -984,12 +1057,62 @@ impl VeteranStore {
                         "v.owned = 1".to_string()
                     });
                 }
+                Filter::WhiteSpark(wsf) => {
+                    let mut sub_clauses: Vec<String> = Vec::new();
+                    if !wsf.group_ids.is_empty() {
+                        let placeholders: Vec<String> =
+                            wsf.group_ids.iter().map(|_| "?".to_string()).collect();
+                        sub_clauses
+                            .push(format!("vss.spark_group_id IN ({})", placeholders.join(",")));
+                        for id in &wsf.group_ids {
+                            params.push(Box::new(*id));
+                        }
+                    }
+                    if wsf.on_trainee {
+                        sub_clauses.push("vss.veteran_level_sum > 0".to_string());
+                    }
+                    let level_col = if wsf.on_trainee {
+                        "vss.veteran_level_sum"
+                    } else {
+                        "vss.level_sum"
+                    };
+                    if let Some(min) = wsf.min_stars {
+                        sub_clauses.push(format!("{} >= ?", level_col));
+                        params.push(Box::new(i64::from(min)));
+                    }
+                    if let Some(max) = wsf.max_stars {
+                        sub_clauses.push(format!("{} <= ?", level_col));
+                        params.push(Box::new(i64::from(max)));
+                    }
+                    if let Some(shared) = wsf.shared_count {
+                        sub_clauses.push("vss.uma_count >= ?".to_string());
+                        params.push(Box::new(i64::from(shared)));
+                    }
+                    if !sub_clauses.is_empty() {
+                        clauses.push(format!(
+                            "EXISTS (SELECT 1 FROM veteran_spark_summary vss \
+                             JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+                             WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5) AND {})",
+                            sub_clauses.join(" AND ")
+                        ));
+                    }
+                }
                 Filter::IsIndependentTrainer { is_independent } => {
                     clauses.push(if *is_independent {
                         format!("v.nickname_id = {INDEPENDENT_LEARNER_NICKNAME}")
                     } else {
                         format!("v.nickname_id != {INDEPENDENT_LEARNER_NICKNAME}")
                     });
+                }
+                Filter::TrainerId(ids) => {
+                    if !ids.is_empty() {
+                        let placeholders: Vec<String> =
+                            ids.iter().map(|_| "?".to_string()).collect();
+                        clauses.push(format!("v.owner_id IN ({})", placeholders.join(",")));
+                        for id in ids {
+                            params.push(Box::new(*id));
+                        }
+                    }
                 }
             }
         }

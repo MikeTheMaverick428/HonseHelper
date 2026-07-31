@@ -237,6 +237,7 @@ pub struct InspirationSummaryRow {
     pub spark_name: String,
     pub spark_type: SparkType,
     pub sparking_chance: f64,
+    pub career_chance: f64,
 }
 
 impl LegacyPlannerSlot {

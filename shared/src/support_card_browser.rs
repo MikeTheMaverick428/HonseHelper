@@ -55,6 +55,7 @@ pub fn rarity_color(r: i64) -> &'static str {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum SupportCardFilter {
+    Owned { owned: bool },
     NameSearch { search_text: String },
     Rarity { rarity: i64 },
     CardType { card_type: i64 },
@@ -127,6 +128,7 @@ pub struct SupportCardPageItem {
     pub favorite_flag: bool,
     pub stock: i64,
     pub character_id: i64,
+    pub owned: bool,
 }
 
 // ── Filter Options ───────────────────────────────────────────────

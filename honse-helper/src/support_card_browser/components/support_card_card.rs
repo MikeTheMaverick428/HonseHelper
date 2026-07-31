@@ -81,9 +81,14 @@ pub fn SupportCardCard(props: &SupportCardCardProps) -> Html {
     let lb = props.card.limit_break_count;
     let is_mlb = lb >= 4;
     let (variant, character_name) = parse_card_name(&props.card.name);
+    let card_cls = if props.card.owned {
+        SupportCardCardStyle::CLASS_NAME.to_string()
+    } else {
+        format!("{} unowned", SupportCardCardStyle::CLASS_NAME)
+    };
 
     html! {
-        <div class={SupportCardCardStyle::CLASS_NAME} onclick={onclick}>
+        <div class={card_cls} onclick={onclick}>
             {if let Some(v) = &variant {
                 html! { <div class={SupportCardVariantStyle::CLASS_NAME}>{v}</div> }
             } else {
@@ -97,15 +102,19 @@ pub fn SupportCardCard(props: &SupportCardCardProps) -> Html {
                 <span class={format!("{} {}", SupportCardTypeStyle::CLASS_NAME, type_class(props.card.card_type))}>
                     {type_label(props.card.card_type)}
                 </span>
-                <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
-                    {(0..4).map(|i| {
-                        let on = i < lb;
-                        html! {
-                            <span class={format!("diamond{}", if on { " on" } else { "" })}></span>
-                        }
-                    }).collect::<Html>()}
-                </span>
-                <span style="color:#9ca3af;font-size:12px;">{format!("Lv{} /{}", props.card.level, props.card.max_level)}</span>
+                if props.card.owned {
+                    <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
+                        {(0..4).map(|i| {
+                            let on = i < lb;
+                            html! {
+                                <span class={format!("diamond{}", if on { " on" } else { "" })}></span>
+                            }
+                        }).collect::<Html>()}
+                    </span>
+                    <span style="color:#9ca3af;font-size:12px;">{format!("Lv{} /{}", props.card.level, props.card.max_level)}</span>
+                } else {
+                    <span style="color:#ef4444;font-size:11px;font-weight:600;">{"Not Owned"}</span>
+                }
             </div>
         </div>
     }

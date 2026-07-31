@@ -1,8 +1,9 @@
 use crate::{
+    components::external_link::ExternalLink,
     styles::{
         app::{
             ApiConfiguredStyle, ApiDotStyle, ApiIndicatorStyle, ApiUnconfiguredStyle,
-            AppContainerStyle, FeatureCardStyle, HeaderStatusGroupStyle, MasterDbBusyStyle,
+            AppContainerStyle, FeatureCardStyle, FooterStyle, HeaderStatusGroupStyle, MasterDbBusyStyle,
             MasterDbDotStyle, MasterDbIndicatorStyle, MasterDbMissingStyle, MasterDbPartialStyle,
             MasterDbReadyStyle, SupplDotStyle, SupplIndicatorStyle, SupplMissingStyle,
             SupplReadyStyle, SupplUpdateStyle, TopRowStyle, VersionPillStyle, WorkerDotStyle, WorkerErrorStyle,
@@ -393,6 +394,20 @@ pub fn App() -> Html {
                         html! {}
                     }
                 }
+
+                <div class={FooterStyle::CLASS_NAME}>
+                    <ExternalLink
+                        url={"https://mikethemaverick428.github.io/HonseHelper/".to_string()}
+                        label={"Docs".to_string()}
+                        title={"Honse Helper manual / docs".to_string()}
+                    />
+                    <span class="footer-sep">{"·"}</span>
+                    <ExternalLink
+                        url={"https://discord.gg/NMhG48AZx".to_string()}
+                        label={"Discord".to_string()}
+                        title={"Join the Honse Helper Discord".to_string()}
+                    />
+                </div>
         </div>
     }
 }

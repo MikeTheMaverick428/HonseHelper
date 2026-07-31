@@ -55,6 +55,12 @@ impl Style for MasterDbIndicatorStyle {
             padding: 8px 12px;
             border-radius: 999px;
             font-size: 13px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        {{class}}:hover {
+            background: #283245;
         }
     "#;
 
@@ -495,6 +501,40 @@ impl Style for ApiUnconfiguredStyle {
     const CLASS_NAME: &'static str = "api-unconfigured";
 }
 
+pub struct FooterStyle;
+
+impl Style for FooterStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-top: auto;
+            padding: 16px 0 8px 0;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        {{class}} a {
+            color: #94a3b8;
+            text-decoration: none;
+            transition: color 0.15s ease;
+        }
+
+        {{class}} a:hover {
+            color: #e2e8f0;
+            text-decoration: underline;
+        }
+
+        {{class}} .footer-sep {
+            color: #334155;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "footer";
+}
+
 pub struct ApiConfigContainerStyle;
 
 impl Style for ApiConfigContainerStyle {
@@ -718,6 +758,7 @@ inventory::submit! { StyleDefinition { css: WorkerStoppedStyle::CSS, selector_ty
 inventory::submit! { StyleDefinition { css: WorkerErrorStyle::CSS, selector_type: WorkerErrorStyle::SELECTOR_TYPE, class_name: WorkerErrorStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: HeaderStatusGroupStyle::CSS, selector_type: HeaderStatusGroupStyle::SELECTOR_TYPE, class_name: HeaderStatusGroupStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: VersionPillStyle::CSS, selector_type: VersionPillStyle::SELECTOR_TYPE, class_name: VersionPillStyle::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: FooterStyle::CSS, selector_type: FooterStyle::SELECTOR_TYPE, class_name: FooterStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: ApiIndicatorStyle::CSS, selector_type: ApiIndicatorStyle::SELECTOR_TYPE, class_name: ApiIndicatorStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: ApiDotStyle::CSS, selector_type: ApiDotStyle::SELECTOR_TYPE, class_name: ApiDotStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: ApiConfiguredStyle::CSS, selector_type: ApiConfiguredStyle::SELECTOR_TYPE, class_name: ApiConfiguredStyle::CLASS_NAME } }
