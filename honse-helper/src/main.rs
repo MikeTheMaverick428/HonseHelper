@@ -11,6 +11,7 @@ mod supplementary_data_window;
 mod support_card_browser;
 mod tauri_bridge;
 mod trainee_browser;
+mod trainer_browser;
 mod veteran_browser;
 mod worker_status;
 
@@ -25,6 +26,7 @@ use supplementary_data_window::SupplementaryDataWindow;
 use support_card_browser::SupportCardBrowser;
 use tauri_bridge::get_window_label;
 use trainee_browser::TraineeBrowser;
+use trainer_browser::TrainerBrowser;
 use veteran_browser::VeteranBrowser;
 use worker_status::window::WorkerStatusWindow;
 use yew::prelude::*;
@@ -47,6 +49,7 @@ fn Root() -> Html {
         "veteran-browser" => html! { <VeteranBrowser /> },
         "support-card-browser" => html! { <SupportCardBrowser /> },
         "trainee-browser" => html! { <TraineeBrowser /> },
+        "trainer-browser" => html! { <TrainerBrowser /> },
         "legacy-planner" => html! { <LegacyPlanner /> },
         "worker-status" => html! { <WorkerStatusWindow /> },
         "api-config" => html! { <ApiConfigWindow /> },

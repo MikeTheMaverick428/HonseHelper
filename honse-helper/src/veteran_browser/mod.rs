@@ -947,7 +947,7 @@ pub fn VeteranBrowser() -> Html {
                                     } else {
                                         None
                                     };
-                                    let on_delete = if !v.veteran.owned && matches!(*mode, BrowserMode::Browse) {
+                                    let on_delete = if !api_mode && !v.veteran.owned && !v.veteran.from_followed_trainer && matches!(*mode, BrowserMode::Browse) {
                                         Some(on_delete.clone())
                                     } else {
                                         None

@@ -23,6 +23,7 @@ pub enum WorkerCommand {
     },
     GetVeteranData,
     GetFriendData,
+    GetSingleModeStartFriends,
     GetSupportCardData,
     GetUserData,
     GetRaceTeamData,

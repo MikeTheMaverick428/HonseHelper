@@ -1,8 +1,8 @@
+use crate::components::parse_variant_name;
 use crate::styles::trainee_browser::*;
 use crate::styles::legacy_planner::{AffinityBaseStyle, AffinityBonusStyle, AffinityPlusStyle};
 use crate::styles::veteran_card::{CardAffinityStyle, CardNameStyle, VeteranVariantStyle};
 use crate::styles::Style;
-use crate::veteran_browser::components::veteran_card::parse_veteran_name;
 use shared::trainee_browser::TraineePageItem;
 use yew::prelude::*;
 
@@ -65,7 +65,7 @@ pub fn TraineeCard(props: &TraineeCardProps) -> Html {
         })
     });
 
-    let (variant, _) = parse_veteran_name(&props.card.name);
+    let (variant, _) = parse_variant_name(&props.card.name);
 
     html! {
         <div class={TraineeCardStyle::CLASS_NAME} onclick={onclick}>

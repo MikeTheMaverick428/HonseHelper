@@ -1,9 +1,10 @@
+use crate::components::parse_variant_name;
 use crate::styles::detail_modal::*;
 use crate::styles::skill_pill::*;
 use crate::styles::support_card_browser::*;
 use crate::styles::Style;
 use crate::support_card_browser::components::support_card_card::{
-    parse_card_name, rarity_class, rarity_label, type_class, type_label,
+    rarity_class, rarity_label, type_class, type_label,
 };
 use crate::tauri_bridge::invoke_tauri_command;
 use crate::veteran_browser::components::skill_detail_modal::SkillDetailModal;
@@ -23,6 +24,10 @@ use yew::prelude::*;
 pub struct SupportCardDetailModalProps {
     pub card: SupportCardPageItem,
     pub on_close: Callback<()>,
+    /// When set, the card is shown as a borrowed card using the level / limit
+    /// break count carried by `card` (instead of the owning user's collection).
+    #[prop_or(false)]
+    pub borrow: bool,
 }
 
 #[function_component]
@@ -87,7 +92,7 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
     };
 
     let card = &props.card;
-    let (variant_label, character_name) = parse_card_name(&card.name);
+    let (variant_label, character_name) = parse_variant_name(&card.name);
 
     let on_skill_click = {
         let selected_skill = selected_skill.clone();
@@ -140,7 +145,7 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                             {err}
                         </div>
                     } else if *active_tab == 0 {
-                        {render_overview(card, &*effects, &*unique_effect)}
+                        {render_overview(card, &*effects, &*unique_effect, props.borrow)}
                     } else if *active_tab == 1 {
                         {render_effects(&effects, props.card.rarity)}
                     } else if *active_tab == 2 {
@@ -173,6 +178,7 @@ fn render_overview(
     card: &SupportCardPageItem,
     effects: &[SupportCardEffectRow],
     unique: &Option<SupportCardUniqueEffectDetail>,
+    borrow: bool,
 ) -> Html {
     let type_cls = type_class(card.card_type);
     let rarity_cls = rarity_class(card.rarity);
@@ -193,7 +199,7 @@ fn render_overview(
                 <span class={format!("{} {}", SupportCardTypeStyle::CLASS_NAME, type_cls)}>
                     {type_label(card.card_type)}
                 </span>
-                if card.owned {
+                if card.owned || borrow {
                     <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
                         {(0..4).map(|i| {
                             let on = i < card.limit_break_count as usize;
@@ -203,11 +209,16 @@ fn render_overview(
                     <span style="color: #9ca3af; font-size: 13px;">
                         {format!("Lv{}/{}", lv, card.max_level)}
                     </span>
+                    if borrow {
+                        <span style="color:#93c5fd;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid #3b82f666;border-radius:999px;background:#1e3a5f55;">
+                            {"Borrow"}
+                        </span>
+                    }
                 } else {
                     <span style="color: #ef4444; font-size: 13px; font-weight: 600;">{"Not Owned"}</span>
                 }
             </div>
-            if card.owned {
+            if card.owned && (card.exp > 0 || card.stock > 0 || card.favorite_flag) {
                 <div style="display: flex; gap: 16px; font-size: 13px; color: #94a3b8; margin-bottom: 20px;">
                     <span>{"EXP: "}<span style="color: #e2e8f0;">{card.exp}</span></span>
                     { if card.favorite_flag { html! { <span>{"\u{2605}"}{" Favorite"}</span> } } else { html! {} } }
@@ -215,7 +226,7 @@ fn render_overview(
                 </div>
             }
 
-            {render_unique_section(unique, card.level, card.owned)}
+            {render_unique_section(unique, card.level, card.owned || borrow)}
 
             if !current_effects.is_empty() {
                 <div style="margin-bottom: 20px;">
@@ -235,7 +246,7 @@ fn render_overview(
     }
 }
 
-fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64, owned: bool) -> Html {
+fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64, show_stats: bool) -> Html {
     match unique {
         None => html! {
             <div class={UniqueSectionStyle::CLASS_NAME}>
@@ -244,7 +255,7 @@ fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_le
             </div>
         },
         Some(ue) => {
-            let meets_level = owned && card_level >= ue.limit_break_level;
+            let meets_level = show_stats && card_level >= ue.limit_break_level;
             html! {
                 <div class={UniqueSectionStyle::CLASS_NAME}>
                     <h3 class={UniqueSectionTitleStyle::CLASS_NAME}>{"Unique Effect"}</h3>

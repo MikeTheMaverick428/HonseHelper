@@ -349,7 +349,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Profile { account_id } => {
-            let result = client.get_profile(&account_id).await?;
+            let result = client.get_profile(&account_id, None).await?;
             if cli.pretty_json {
                 println!("{}", to_string_pretty(&result)?);
             } else {

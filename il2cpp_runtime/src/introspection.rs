@@ -8,7 +8,7 @@ use crate::readers::{
 };
 use anyhow::Context;
 use anyhow::{anyhow, Result};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 #[cfg(windows)]
 use windows::Win32::System::Memory::{
@@ -416,6 +416,74 @@ impl RuntimeIntrospector {
                 addr += chunk_size as u64;
                 scanned += chunk_size;
                 remaining_region = remaining_region.saturating_sub(chunk_size);
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn find_object_by_class_from_roots(
+        &mut self,
+        target_namespace: &str,
+        target_class_name: &str,
+        root_ptrs: &[u64],
+        max_depth: usize,
+        max_nodes: usize,
+    ) -> Result<Option<u64>> {
+        let mut visited: HashSet<u64> = HashSet::new();
+        let mut queue: VecDeque<(u64, usize)> = VecDeque::new();
+
+        for &ptr in root_ptrs {
+            if ptr != 0 && visited.insert(ptr) {
+                queue.push_back((ptr, 0));
+            }
+        }
+
+        let mut scanned = 0usize;
+
+        while let Some((obj_ptr, depth)) = queue.pop_front() {
+            if scanned >= max_nodes {
+                break;
+            }
+            scanned += 1;
+
+            let class_ptr = self.read_pointer_at(obj_ptr).unwrap_or(0);
+            if let Some((ns, name)) = self.class_name_for_class_ptr(class_ptr)
+            {
+                if ns == target_namespace && name == target_class_name {
+                    return Ok(Some(obj_ptr));
+                }
+            }
+
+            if depth >= max_depth {
+                continue;
+            }
+
+            let fields = match self.runtime_fields_for_object_cached(obj_ptr) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            for field in &fields {
+                if field.offset < 0 {
+                    continue;
+                }
+
+                let child_ptr = match self.process_memory().read_pointer(obj_ptr + field.offset as u64)
+                {
+                    Ok(ptr) => ptr,
+                    Err(_) => continue,
+                };
+
+                if child_ptr == 0 || !visited.insert(child_ptr) {
+                    continue;
+                }
+
+                if self.runtime_fields_for_object_cached(child_ptr).is_err() {
+                    continue;
+                }
+
+                queue.push_back((child_ptr, depth + 1));
             }
         }
 

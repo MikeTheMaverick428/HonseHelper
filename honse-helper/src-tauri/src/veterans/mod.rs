@@ -375,7 +375,35 @@ fn upsert_veteran(conn: &Connection, veteran: &Veteran) -> Result<bool, String> 
                 favorite_memo = ?3,
                 is_browser = MAX(is_browser, ?4),
                 active = 1,
-                updated_at = ?5
+                updated_at = ?5,
+                scenario           = COALESCE(scenario, ?6),
+                stat_speed         = COALESCE(stat_speed, ?7),
+                stat_stamina       = COALESCE(stat_stamina, ?8),
+                stat_power         = COALESCE(stat_power, ?9),
+                stat_guts          = COALESCE(stat_guts, ?10),
+                stat_wit           = COALESCE(stat_wit, ?11),
+                aptitude_turf      = COALESCE(aptitude_turf, ?12),
+                aptitude_dirt      = COALESCE(aptitude_dirt, ?13),
+                aptitude_sprint    = COALESCE(aptitude_sprint, ?14),
+                aptitude_mile      = COALESCE(aptitude_mile, ?15),
+                aptitude_medium    = COALESCE(aptitude_medium, ?16),
+                aptitude_long      = COALESCE(aptitude_long, ?17),
+                aptitude_front     = COALESCE(aptitude_front, ?18),
+                aptitude_pace_chaser= COALESCE(aptitude_pace_chaser, ?19),
+                aptitude_late_surger= COALESCE(aptitude_late_surger, ?20),
+                aptitude_end_closer= COALESCE(aptitude_end_closer, ?21),
+                rarity             = COALESCE(NULLIF(rarity, 0), ?22),
+                talent_level       = COALESCE(talent_level, ?23),
+                trained_chara_id   = COALESCE(NULLIF(trained_chara_id, 0), ?24),
+                use_type           = COALESCE(NULLIF(use_type, 0), ?25),
+                fans               = COALESCE(NULLIF(fans, 0), ?26),
+                succession_num     = COALESCE(NULLIF(succession_num, 0), ?27),
+                is_saved           = COALESCE(NULLIF(is_saved, 0), ?28),
+                is_locked          = COALESCE(NULLIF(is_locked, 0), ?29),
+                chara_grade        = COALESCE(NULLIF(chara_grade, 0), ?30),
+                veteran_running_style = COALESCE(NULLIF(veteran_running_style, 0), ?31),
+                nickname_id        = COALESCE(NULLIF(nickname_id, 0), ?32),
+                wins               = COALESCE(NULLIF(wins, 0), ?33)
             WHERE hash = ?1
             "#,
             params![
@@ -384,11 +412,39 @@ fn upsert_veteran(conn: &Connection, veteran: &Veteran) -> Result<bool, String> 
                 veteran.favorite_memo,
                 i64::from(veteran.is_browser),
                 now,
+                veteran.scenario.map(i64::from),
+                veteran.stat_speed.map(i64::from),
+                veteran.stat_stamina.map(i64::from),
+                veteran.stat_power.map(i64::from),
+                veteran.stat_guts.map(i64::from),
+                veteran.stat_wit.map(i64::from),
+                veteran.aptitude_turf.map(i64::from),
+                veteran.aptitude_dirt.map(i64::from),
+                veteran.aptitude_sprint.map(i64::from),
+                veteran.aptitude_mile.map(i64::from),
+                veteran.aptitude_medium.map(i64::from),
+                veteran.aptitude_long.map(i64::from),
+                veteran.aptitude_front.map(i64::from),
+                veteran.aptitude_pace_chaser.map(i64::from),
+                veteran.aptitude_late_surger.map(i64::from),
+                veteran.aptitude_end_closer.map(i64::from),
+                i64::from(veteran.rarity),
+                veteran.talent_level.map(i64::from),
+                veteran.trained_chara_id.unwrap_or(0),
+                veteran.use_type,
+                veteran.fans,
+                veteran.succession_num,
+                veteran.is_saved,
+                veteran.is_locked,
+                veteran.chara_grade,
+                veteran.veteran_running_style,
+                veteran.nickname_id,
+                veteran.wins,
             ],
         )
         .map_err(|e| {
             format!(
-                "failed to update veteran favorite fields {}: {e}",
+                "failed to update veteran {}: {e}",
                 veteran.hash.as_i64()
             )
         })?;
@@ -706,5 +762,36 @@ where
     stmt.execute(params_from_iter(params))
         .map_err(|err| format!("failed to insert {label}: {err}"))?;
 
+    Ok(())
+}
+
+pub(crate) fn deactivate_trainer_veterans(
+    conn: &Connection,
+    owner_id: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE veterans SET active = 0 \
+         WHERE owner_id = ?1 \
+           AND owned = 0 \
+           AND is_browser = 1 \
+           AND active = 1 \
+           AND hash != ( \
+             SELECT hash FROM ( \
+               SELECT hash, \
+                 CASE WHEN stat_speed IS NOT NULL \
+                      THEN updated_at \
+                      ELSE created_at \
+                 END AS freshness \
+               FROM veterans \
+               WHERE owner_id = ?1 \
+                 AND owned = 0 \
+                 AND is_browser = 1 \
+                 AND active = 1 \
+               ORDER BY freshness DESC LIMIT 1 \
+             ) \
+           )",
+        rusqlite::params![owner_id],
+    )
+    .map_err(|e| format!("deactivate trainer veterans for {owner_id}: {e}"))?;
     Ok(())
 }

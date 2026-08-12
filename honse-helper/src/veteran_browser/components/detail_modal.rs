@@ -1,16 +1,11 @@
-use crate::styles::{
-    detail_modal::*,
-    skill_pill::*,
-    tag_modal::{TagPillListStyle, TagPillRemoveStyle, TagPillStyle},
-    veteran_card::{
+use crate::{components::parse_variant_name, styles::{
+    Style, detail_modal::*, skill_pill::*, tag_modal::{TagPillListStyle, TagPillRemoveStyle, TagPillStyle}, veteran_card::{
         CardFooterStyle, CardHashStyle, CardHeaderStyle, CardMetaStyle, CardNameStyle,
         CardRankStyle, CardSparksStyle, CardStatsRowStyle, IndepTrainBadgeStyle,
         OwnerIdBadgeStyle, OwnerIdPrefixStyle, StatLabelStyle, StatValueStyle,
         VeteranVariantStyle,
     },
-    Style,
-};
-use crate::support_card_browser::components::support_card_card::parse_card_name;
+}};
 use crate::veteran_browser::components::skill_detail_modal::SkillDetailModal;
 use crate::veteran_browser::components::skill_pill::SkillPill;
 use shared::models::{INDEPENDENT_LEARNER_NICKNAME, UmaRank};
@@ -26,7 +21,6 @@ use serde_json::json;
 
 use super::rank_badge::RankBadge;
 use super::spark_item::SparkItem;
-use super::veteran_card::parse_veteran_name;
 use crate::components::wins_list::WinsList;
 
 #[derive(Properties, PartialEq)]
@@ -508,7 +502,7 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
         return html! { <div class={ModalOverlayStyle::CLASS_NAME}><div class={ModalContentStyle::CLASS_NAME}><p>{"Loading..."}</p></div></div> };
     };
 
-    let (variant, character_name) = v.trainee_name.as_deref().map(parse_veteran_name).unwrap_or((None, "Unknown"));
+    let (variant, character_name) = v.trainee_name.as_deref().map(parse_variant_name).unwrap_or((None, "Unknown"));
 
     let has_any_stat = v.stat_speed.is_some()
         || v.stat_stamina.is_some()
@@ -977,7 +971,7 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
                                                 let lb = sc.limit_break_count.min(4);
                                                 let is_mlb = lb >= 4;
                                                 let is_borrow = sc.position == 6;
-                                                let (variant, character_name) = parse_card_name(&sc.name);
+                                                let (variant, character_name) = parse_variant_name(&sc.name);
                                                 html! {
                                                     <div class={classes!(SupportCardRowStyle::CLASS_NAME, is_borrow.then_some("borrow-row"))}>
                                                         <span class={classes!(SupportCardLbStyle::CLASS_NAME, is_mlb.then_some("mlb"))}>

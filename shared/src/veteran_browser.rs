@@ -221,6 +221,8 @@ pub struct VeteranRow {
     pub affinity: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nickname_id: Option<i64>,
+    #[serde(default)]
+    pub from_followed_trainer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

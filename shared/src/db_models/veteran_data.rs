@@ -347,6 +347,26 @@ pub fn hash_uma_entity(trainee_id: i64, factor_id_array: &[i64]) -> UmaHash {
     UmaHash::from(hash)
 }
 
+pub fn hash_rental_veteran(
+    trainee_id: i64,
+    factor_id_array: &[i64],
+    rank_score: i64,
+    rank: i64,
+) -> UmaHash {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    trainee_id.hash(&mut hasher);
+
+    let mut sorted_factors = factor_id_array.to_vec();
+    sorted_factors.sort();
+    sorted_factors.hash(&mut hasher);
+
+    rank_score.hash(&mut hasher);
+    rank.hash(&mut hasher);
+
+    let hash = hasher.finish();
+    UmaHash::from(hash)
+}
+
 fn hash_trained_chara(mssgpack: &MssgPackTrainedChara) -> UmaHash {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     mssgpack.card_id.hash(&mut hasher);

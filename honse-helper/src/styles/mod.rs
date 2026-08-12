@@ -22,6 +22,7 @@ pub mod spark_item;
 pub mod support_card_browser;
 pub mod tag_modal;
 pub mod trainee_browser;
+pub mod trainer_browser;
 pub mod veteran_browser;
 pub mod veteran_card;
 pub mod worker_status;

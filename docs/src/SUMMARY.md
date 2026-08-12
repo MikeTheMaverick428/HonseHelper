@@ -8,6 +8,7 @@
 - [Race Dump Viewer](features/race-dump-viewer.md)
 - [Support Card Browser](features/support-card-browser.md)
 - [Trainee Browser](features/trainee-browser.md)
+- [Trainer Browser](features/trainer-browser.md)
 
 # Guides
 

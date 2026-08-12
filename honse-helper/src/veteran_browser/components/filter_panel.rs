@@ -1572,6 +1572,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                                 SelectOption { value: "white_spark".to_string(), label: "White Spark Count".to_string() },
                                 SelectOption { value: "wins".to_string(), label: "Major Win Count".to_string() },
                                 SelectOption { value: "affinity".to_string(), label: "Affinity".to_string() },
+                                SelectOption { value: "trainer".to_string(), label: "Trainer ID".to_string() },
                             ]
                         } else {
                             vec![

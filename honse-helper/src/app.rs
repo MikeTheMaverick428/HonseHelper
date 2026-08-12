@@ -184,6 +184,14 @@ pub fn App() -> Html {
         })
     };
 
+    let on_open_trainer_browser = {
+        Callback::from(move |_: yew::MouseEvent| {
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = invoke_tauri_command("open_trainer_browser", json!({})).await;
+            });
+        })
+    };
+
     let on_open_legacy_planner = {
         Callback::from(move |_: yew::MouseEvent| {
             wasm_bindgen_futures::spawn_local(async move {
@@ -352,6 +360,14 @@ pub fn App() -> Html {
                     <div style="display: flex; gap: 8px;">
                         <button onclick={on_open_support_card_browser}>{"Support Cards"}</button>
                         <button onclick={on_open_trainee_browser}>{"Trainees"}</button>
+                    </div>
+                </div>
+
+                <div class={FeatureCardStyle::CLASS_NAME}>
+                    <h2>{"Trainer Browser"}</h2>
+                    <p>{"Browse followed trainers and their borrow veterans / support cards"}</p>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick={on_open_trainer_browser}>{"Open"}</button>
                     </div>
                 </div>
 

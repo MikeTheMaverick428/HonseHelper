@@ -1,4 +1,6 @@
+use crate::components::copyable::{HashBadge, OwnerBadge};
 use crate::components::delete_button::DeleteButton;
+use crate::components::{Badge, parse_variant_name};
 use crate::styles::{
     legacy_planner::{AffinityBaseStyle, AffinityBonusStyle, AffinityPlusStyle},
     tag_modal::CardTagMoreStyle,
@@ -49,19 +51,6 @@ fn format_rank(score: i64) -> String {
     }
 }
 
-pub fn parse_veteran_name(name: &str) -> (Option<String>, &str) {
-    let name = name.trim();
-    if let Some(end_bracket) = name.find(']') {
-        if name.starts_with('[') && end_bracket > 0 {
-            let variant = name[1..end_bracket].trim().to_string();
-            let character = name[end_bracket + 1..].trim();
-            let variant = if variant.is_empty() { None } else { Some(variant) };
-            return (variant, character);
-        }
-    }
-    (None, name)
-}
-
 fn icon_label(icon_type: i64) -> String {
     FavouriteIcon::try_from(icon_type as i16)
         .map(|icon| icon.label().to_string())
@@ -71,9 +60,6 @@ fn icon_label(icon_type: i64) -> String {
 #[function_component]
 pub fn VeteranCard(props: &VeteranCardProps) -> Html {
     let v = &props.veteran;
-    let owner_copied = use_state(|| false);
-    let hash_copied = use_state(|| false);
-    let min_hash_copied = use_state(|| false);
     let onclick = {
         let cb = props.on_click.clone();
         Callback::from(move |_| cb.emit(()))
@@ -141,15 +127,29 @@ pub fn VeteranCard(props: &VeteranCardProps) -> Html {
         ta.cmp(&tb).then(b.level_sum.cmp(&a.level_sum))
     });
 
-    let (variant, character_name) = v.trainee_name.as_deref().map(parse_veteran_name).unwrap_or((None, "Unknown"));
+    let (variant, character_name) = v.trainee_name.as_deref().map(parse_variant_name).unwrap_or((None, "Unknown"));
+
+    // Helper formatted values
+    let scenario_name = v.scenario
+        .and_then(|sc| props.scenarios.iter().find(|(id, _)| *id == sc))
+        .map(|(_, n)| n.as_str())
+        .unwrap_or("?");
+
+    let formatted_date = if v.created_at.len() >= 10 { &v.created_at[..10] } else { &v.created_at };
+
+    // Action button selection logic
+    let action_button = on_select.map(|cb| html! {
+        <button class={SelectBtnStyle::CLASS_NAME} onclick={cb}>{"Select"}</button>
+    }).or_else(|| on_save.map(|cb| html! {
+        <button class={SelectBtnStyle::CLASS_NAME} onclick={cb}>{"Save"}</button>
+    }));
 
     html! {
         <div class={VeteranCardRootStyle::CLASS_NAME} onclick={onclick}>
+            // --- HEADER ---
             <div class={CardHeaderStyle::CLASS_NAME}>
-                <div style="display:flex;flex-direction:column;">
-                    {if let Some(v) = &variant {
-                        html! { <span class={VeteranVariantStyle::CLASS_NAME}>{v}</span> }
-                    } else { html! {} }}
+                <div style="display:flex; flex-direction:column;">
+                    { for variant.as_ref().map(|v| html! { <span class={VeteranVariantStyle::CLASS_NAME}>{v}</span> }) }
                     <span class={CardNameStyle::CLASS_NAME}>{ character_name }</span>
                 </div>
                 <span class={classes!(CardRankStyle::CLASS_NAME, (!v.owned).then_some(CardBorrowedStyle::CLASS_NAME))}>
@@ -157,45 +157,53 @@ pub fn VeteranCard(props: &VeteranCardProps) -> Html {
                     <span class={RankScoreStyle::CLASS_NAME}>{ format_rank(v.rank_score) }</span>
                 </span>
             </div>
+
+            // --- META ZONE ---
             <div class={CardMetaStyle::CLASS_NAME}>
-                <span class={CardScenarioStyle::CLASS_NAME}>{ v.scenario.and_then(|sc| props.scenarios.iter().find(|(id, _)| *id == sc)).map(|(_, n)| n.as_str()).unwrap_or("?") }</span>
-                <span class={CardDateStyle::CLASS_NAME}>{ if v.created_at.len() >= 10 { &v.created_at[..10] } else { &v.created_at } }</span>
+                <span class={CardScenarioStyle::CLASS_NAME}>{ scenario_name }</span>
+                <span class={CardDateStyle::CLASS_NAME}>{ formatted_date }</span>
+
                 { if !v.owned {
-                    if let Some(owner) = v.owner_id {
-                        let owner_copied = owner_copied.clone();
-                        html! { <span class={classes!(OwnerIdBadgeStyle::CLASS_NAME, (*owner_copied).then_some("owner-id-copied"))} title="Click to copy owner ID"
-                            onclick={Callback::from(move |e: MouseEvent| {
-                                e.stop_propagation();
-                                let text = owner.to_string();
-                                let owner_copied = owner_copied.clone();
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.navigator().clipboard().write_text(&text);
-                                    }
-                                    owner_copied.set(true);
-                                    gloo_timers::future::TimeoutFuture::new(500).await;
-                                    owner_copied.set(false);
-                                });
-                            })}
-                        ><span class={OwnerIdPrefixStyle::CLASS_NAME}>{"Owner"}</span>{ owner }</span> }
-                    } else { html! {} }
-                } else { html! {} } }
-                { if v.nickname_id == Some(INDEPENDENT_LEARNER_NICKNAME) {
-                    html! { <span class={IndepTrainBadgeStyle::CLASS_NAME}>{"Indep. Training"}</span> }
-                } else { html! {} } }
+                    v.owner_id.map(|owner_id| {
+                        let owner_id = owner_id as u64; 
+                        html! { <OwnerBadge {owner_id} /> }
+                    })
+                } else {
+                    None
+                }}
             </div>
-            <div class={CardStatsRowStyle::CLASS_NAME}>
-                <span class={StatLabelStyle::CLASS_NAME}>{"Sparks:"}</span>
-                <span class={StatValueStyle::CLASS_NAME}>{ v.white_spark_count }</span>
-                <span class={StatSubStyle::CLASS_NAME}>{" ("}{ v.white_spark_on_veteran_count }{")"}</span>
+
+            // --- STATS BLOCK (Stacked Stat Rows + Right Badges) ---
+            <div class={CardStatsBlockStyle::CLASS_NAME}>
+                // Left Column: Stacking individual stat rows one below another
+                <div class={CardStatsListStyle::CLASS_NAME}>
+                    <div class={CardStatsRowStyle::CLASS_NAME}>
+                        <span class={StatLabelStyle::CLASS_NAME}>{"Sparks:"}</span>
+                        <span class={StatValueStyle::CLASS_NAME}>{ v.white_spark_count }</span>
+                        <span class={StatSubStyle::CLASS_NAME}>{" ("}{ v.white_spark_on_veteran_count }{")"}</span>
+                    </div>
+                    <div class={CardStatsRowStyle::CLASS_NAME}>
+                        <span class={StatLabelStyle::CLASS_NAME}>{"Wins:"}</span>
+                        <span class={StatValueStyle::CLASS_NAME}>{ v.major_wins_count }</span>
+                        <span class={StatSubStyle::CLASS_NAME}>{" ("}{ v.major_wins_on_veteran_count }{")"}</span>
+                    </div>
+                </div>
+
+                // Right Column: Badges
+                <div class={CardBadgesGroupStyle::CLASS_NAME}>
+                    { if v.from_followed_trainer {
+                        html! { <Badge label="Followed" variant_class="badge-followed" /> }
+                    } else { html! {} } }
+
+                    { if v.nickname_id == Some(INDEPENDENT_LEARNER_NICKNAME) {
+                        html! { <Badge label="Indep. Training" variant_class="badge-indep-training" /> }
+                    } else { html! {} } }
+                </div>
             </div>
-            <div class={CardStatsRowStyle::CLASS_NAME}>
-                <span class={StatLabelStyle::CLASS_NAME}>{"Wins:"}</span>
-                <span class={StatValueStyle::CLASS_NAME}>{ v.major_wins_count }</span>
-                <span class={StatSubStyle::CLASS_NAME}>{" ("}{ v.major_wins_on_veteran_count }{")"}</span>
-            </div>
-            { if let Some(aff) = props.affinity {
-                html! { <div class={CardAffinityStyle::CLASS_NAME}>
+
+            // --- AFFINITY ---
+            { for props.affinity.as_ref().map(|aff| html! {
+                <div class={CardAffinityStyle::CLASS_NAME}>
                     <span>{"Affinity: "}</span>
                     <span class={AffinityBaseStyle::CLASS_NAME}>{aff.base}</span>
                     { if aff.bonus > 0 {
@@ -207,8 +215,10 @@ pub fn VeteranCard(props: &VeteranCardProps) -> Html {
                             </>
                         }
                     } else { html! {} } }
-                </div> }
-            } else { html! {} } }
+                </div>
+            }) }
+
+            // --- SPARKS LIST ---
             { if !display_sparks.is_empty() {
                 html! {
                     <div class={CardSparksStyle::CLASS_NAME}>
@@ -219,13 +229,14 @@ pub fn VeteranCard(props: &VeteranCardProps) -> Html {
                     </div>
                 }
             } else { html! {} } }
+
+            // --- TAGS ---
             { if !props.tags.is_empty() {
-                let display_tags: Vec<&TagRow> = props.tags.iter().take(3).collect();
                 let remaining = props.tags.len().saturating_sub(3);
                 html! {
                     <div class={CardTagsStyle::CLASS_NAME}>
-                        { for display_tags.iter().map(|t| {
-                            html! { <span class={CardTagPillStyle::CLASS_NAME}>{ &t.tag_value }</span> }
+                        { for props.tags.iter().take(3).map(|t| html! {
+                            <span class={CardTagPillStyle::CLASS_NAME}>{ &t.tag_value }</span>
                         })}
                         { if remaining > 0 {
                             html! { <span class={CardTagMoreStyle::CLASS_NAME}>{ format!("+{}", remaining) }</span> }
@@ -233,72 +244,27 @@ pub fn VeteranCard(props: &VeteranCardProps) -> Html {
                     </div>
                 }
             } else { html! {} } }
+
+            // --- FOOTER ---
             <div class={CardFooterStyle::CLASS_NAME}>
-                { {
-                    let hash_str = format!("{:016x}", v.hash as u64);
-                    let hash_copied = hash_copied.clone();
-                    let hash_display = hash_str.clone();
-                    html! {
-                        <span class={classes!(CardHashStyle::CLASS_NAME, (*hash_copied).then_some("hash-copied"))} title="Click to copy trained chara hash"
-                            onclick={Callback::from(move |e: yew::MouseEvent| {
-                                e.stop_propagation();
-                                let text = hash_display.clone();
-                                let hash_copied = hash_copied.clone();
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.navigator().clipboard().write_text(&text);
-                                    }
-                                    hash_copied.set(true);
-                                    gloo_timers::future::TimeoutFuture::new(500).await;
-                                    hash_copied.set(false);
-                                });
-                            })}>
-                            { "VET " }{ hash_str }
-                        </span>
-                    }
-                } }
-                { if let Some(min_hash) = v.min_hash {
-                    let hash_str = format!("{:016x}", min_hash as u64);
-                    let min_hash_copied = min_hash_copied.clone();
-                    let hash_display = hash_str.clone();
-                    html! {
-                        <span class={classes!(CardHashStyle::CLASS_NAME, (*min_hash_copied).then_some("hash-copied"))} title="Click to copy parent identity hash"
-                            onclick={Callback::from(move |e: yew::MouseEvent| {
-                                e.stop_propagation();
-                                let text = hash_display.clone();
-                                let min_hash_copied = min_hash_copied.clone();
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.navigator().clipboard().write_text(&text);
-                                    }
-                                    min_hash_copied.set(true);
-                                    gloo_timers::future::TimeoutFuture::new(500).await;
-                                    min_hash_copied.set(false);
-                                });
-                            })}>
-                            { "PRT " }{ hash_str }
-                        </span>
-                    }
-                } else { html! {} } }
+                <div class={CardFooterLeftStyle::CLASS_NAME}>
+                    <HashBadge label="VET" hash={v.hash as u64} title="Click to copy trained chara hash" />
+                    { for v.min_hash.map(|hash| html! {
+                        <HashBadge label="PRT" hash={hash as u64} title="Click to copy parent identity hash" />
+                    }) }
+                </div>
                 <span class={CardFooterRightStyle::CLASS_NAME}>
-                    { if let Some(cb) = on_delete {
-                        html! { <DeleteButton onclick={cb} title="Remove this veteran" /> }
-                    } else { html! {} } }
-                    { if let Some(icon) = &v.favorite_icon_type {
-                        html! { <span class={CardFavIconStyle::CLASS_NAME} title="Favourite">{ icon_label(*icon) }</span> }
-                    } else { html! {} } }
-                    { if let Some(memo) = &v.favorite_memo {
-                        if !memo.is_empty() {
-                            html! { <span class={CardFavMemoStyle::CLASS_NAME} title="Memo">{ memo }</span> }
-                        } else { html! {} }
-                    } else { html! {} } }
+                    { for on_delete.map(|cb| html! { <DeleteButton onclick={cb} title="Remove this veteran" /> }) }
+                    { for v.favorite_icon_type.map(|icon| html! {
+                        <span class={CardFavIconStyle::CLASS_NAME} title="Favourite">{ icon_label(icon) }</span>
+                    }) }
+                    { for v.favorite_memo.as_ref().filter(|m| !m.is_empty()).map(|memo| html! {
+                        <span class={CardFavMemoStyle::CLASS_NAME} title="Memo">{ memo }</span>
+                    }) }
                 </span>
             </div>
-            { if let Some(cb) = on_select {
-                html! { <button class={SelectBtnStyle::CLASS_NAME} onclick={cb}>{"Select"}</button> }
-            } else if let Some(cb) = on_save {
-                html! { <button class={SelectBtnStyle::CLASS_NAME} onclick={cb}>{"Save"}</button> }
-            } else { html! {} } }
+
+            { action_button.unwrap_or_default() }
         </div>
     }
 }

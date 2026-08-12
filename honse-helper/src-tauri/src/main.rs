@@ -16,6 +16,7 @@ use handlers::legacy_planner::LegacyPlannerStateHandle;
 use handlers::race_dump::RaceDumpDetailState;
 use handlers::support_card_browser::SupportCardBrowserConfig;
 use handlers::trainee_browser::TraineeBrowserConfig;
+use handlers::trainer_browser::TrainerBrowserConfig;
 use handlers::veteran_browser::BrowserConfig;
 use handlers::worker::WorkerStatusState;
 use std::collections::HashMap;
@@ -169,6 +170,9 @@ fn main() {
         .manage(TraineeBrowserConfig {
             modes: Mutex::new(HashMap::new()),
         })
+        .manage(TrainerBrowserConfig {
+            modes: Mutex::new(HashMap::new()),
+        })
         .setup(|app| {
             initialize_app_database();
             sync_app_database_in_background(app.handle().clone());
@@ -216,6 +220,13 @@ fn main() {
             handlers::save_worker_response,
             handlers::veterans::gather_veterans,
             handlers::veterans::export_veterans_to_json,
+            handlers::trainers::gather_followed_trainers,
+            handlers::trainer_browser::open_trainer_browser,
+            handlers::trainer_browser::get_trainer_browser_mode,
+            handlers::trainer_browser::query_trainer_page,
+            handlers::trainer_browser::get_trainer_filter_options,
+            handlers::trainer_browser::uma_moe_api::add_uma_moe_trainer,
+            handlers::trainer_browser::uma_moe_api::refresh_uma_moe_trainer,
             handlers::race_dump::save_race_dump,
             handlers::race_dump::get_race_dumps,
             handlers::race_dump::delete_race_dump,

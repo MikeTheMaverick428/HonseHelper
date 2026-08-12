@@ -526,3 +526,33 @@ impl Default for SearchParamsBuilder {
         Self::new()
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileExcludeField {
+    Veterans,
+    TeamStadium,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ProfileRequest {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<ProfileExcludeField>,
+}
+
+impl ProfileRequest {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn exclude(mut self, field: ProfileExcludeField) -> Self {
+        self.exclude.push(field);
+        self
+    }
+
+    pub fn exclude_lite() -> Self {
+        Self::new()
+            .exclude(ProfileExcludeField::Veterans)
+            .exclude(ProfileExcludeField::TeamStadium)
+    }
+}

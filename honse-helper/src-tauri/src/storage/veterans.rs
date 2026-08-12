@@ -47,21 +47,23 @@ pub(crate) fn veteran_select_cols() -> String {
              (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
               JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
               WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
-             NULLIF(v.nickname_id, 0) AS nickname_id",
-            BASE_COLS
-        )
-    } else {
-        format!(
-            "{}, \
-             (SELECT COUNT(*) FROM veteran_win_count vw WHERE vw.veteran_hash = v.hash) AS major_wins_count, \
-             (SELECT COUNT(*) FROM veteran_win_count vwc WHERE vwc.veteran_hash = v.hash AND vwc.on_veteran != 0) AS major_wins_on_veteran_count, \
-             (SELECT COUNT(DISTINCT vss.spark_group_id) FROM veteran_spark_summary vss \
-              JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
-              WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_count, \
-             (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
-              JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
-              WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
-             NULLIF(v.nickname_id, 0) AS nickname_id",
+              NULLIF(v.nickname_id, 0) AS nickname_id, \
+              COALESCE((SELECT 1 FROM trainers WHERE trainer_id = v.owner_id AND is_following = 1 LIMIT 1), 0) AS from_followed_trainer",
+             BASE_COLS
+         )
+     } else {
+         format!(
+             "{}, \
+              (SELECT COUNT(*) FROM veteran_win_count vw WHERE vw.veteran_hash = v.hash) AS major_wins_count, \
+              (SELECT COUNT(*) FROM veteran_win_count vwc WHERE vwc.veteran_hash = v.hash AND vwc.on_veteran != 0) AS major_wins_on_veteran_count, \
+              (SELECT COUNT(DISTINCT vss.spark_group_id) FROM veteran_spark_summary vss \
+               JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+               WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_count, \
+              (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
+               JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
+               WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
+              NULLIF(v.nickname_id, 0) AS nickname_id, \
+              COALESCE((SELECT 1 FROM trainers WHERE trainer_id = v.owner_id AND is_following = 1 LIMIT 1), 0) AS from_followed_trainer",
             BASE_COLS
         )
     }
@@ -109,6 +111,7 @@ pub(crate) fn make_veteran_row(row: &rusqlite::Row) -> rusqlite::Result<VeteranR
         nickname_id: row.get(34)?,
         spark_groups: Vec::new(),
         affinity: None,
+        from_followed_trainer: row.get::<_, i64>(35)? != 0,
     })
 }
 
@@ -296,7 +299,7 @@ impl VeteranStore {
     }
 
     /// Load veterans missing from the in-memory cache.
-    fn ensure_loaded(
+    pub(crate) fn ensure_loaded(
         &mut self,
         conn: &Connection,
         hashes: impl Iterator<Item = u64>,
@@ -483,6 +486,10 @@ impl VeteranStore {
 
     pub fn get_veteran_slim(&self, hash: u64) -> Option<&SlimUma> {
         self.umas.get(&hash).map(|u| &u.veteran)
+    }
+
+    pub fn get_veteran_group(&self, hash: u64) -> Option<&SlimUmaGroup> {
+        self.umas.get(&hash)
     }
 
     /// Two-phase filter + sort pipeline.

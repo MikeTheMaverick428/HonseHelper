@@ -1,3 +1,4 @@
+use crate::components::parse_variant_name;
 use crate::styles::detail_modal::*;
 use crate::styles::Style;
 use shared::support_card_browser::SupportCardPageItem;
@@ -47,23 +48,6 @@ pub fn type_label(card_type: i64) -> &'static str {
     }
 }
 
-pub fn parse_card_name(name: &str) -> (Option<String>, &str) {
-    let name = name.trim();
-    if let Some(end_bracket) = name.find(']') {
-        if name.starts_with('[') && end_bracket > 0 {
-            let variant = name[1..end_bracket].trim().to_string();
-            let character = name[end_bracket + 1..].trim();
-            let variant = if variant.is_empty() {
-                None
-            } else {
-                Some(variant)
-            };
-            return (variant, character);
-        }
-    }
-    (None, name)
-}
-
 #[derive(Properties, PartialEq)]
 pub struct SupportCardCardProps {
     pub card: SupportCardPageItem,
@@ -80,7 +64,7 @@ pub fn SupportCardCard(props: &SupportCardCardProps) -> Html {
 
     let lb = props.card.limit_break_count;
     let is_mlb = lb >= 4;
-    let (variant, character_name) = parse_card_name(&props.card.name);
+    let (variant, character_name) = parse_variant_name(&props.card.name);
     let card_cls = if props.card.owned {
         SupportCardCardStyle::CLASS_NAME.to_string()
     } else {

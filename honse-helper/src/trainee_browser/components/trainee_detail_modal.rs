@@ -1,10 +1,10 @@
+use crate::components::parse_variant_name;
 use crate::styles::detail_modal::*;
 use crate::styles::trainee_browser::*;
 use crate::styles::veteran_card::VeteranVariantStyle;
 use crate::styles::Style;
 use crate::veteran_browser::components::skill_detail_modal::SkillDetailModal;
 use crate::veteran_browser::components::skill_pill::SkillPill;
-use crate::veteran_browser::components::veteran_card::parse_veteran_name;
 use shared::trainee_browser::{TraineeDetail, TraineeSkillDetail};
 use yew::prelude::*;
 
@@ -409,7 +409,7 @@ pub fn TraineeDetailModal(props: &TraineeDetailModalProps) -> Html {
         return html! {};
     };
 
-    let (variant, _) = parse_veteran_name(&d.name);
+    let (variant, _) = parse_variant_name(&d.name);
 
     html! {
         <>

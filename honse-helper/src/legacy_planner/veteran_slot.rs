@@ -2,17 +2,13 @@ use shared::legacy_planner::{LegacyPlannerSlot, LegacySlotValue};
 use yew::prelude::*;
 
 use crate::{
-    components::SelectOption,
-    styles::{
-        legacy_veteran_slots::{
+    components::{SelectOption, parse_variant_name}, styles::{
+        Style, legacy_veteran_slots::{
             LegacyVeteranSlotActionsStyle, LegacyVeteranSlotBodyStyle,
             LegacyVeteranSlotCardClearStyle, LegacyVeteranSlotCardHeaderStyle,
             LegacyVeteranSlotCardTitleStyle, LegacyVeteranSlotCharacterIdStyle,
             LegacyVeteranSlotCharacterNameStyle, LegacyVeteranSlotContainerStyle,
-        },
-        shared_components::HeaderActionButtonStyle,
-        veteran_card::CardHashStyle,
-        Style,
+        }, shared_components::HeaderActionButtonStyle, veteran_card::CardHashStyle,
     },
 };
 
@@ -25,19 +21,6 @@ fn copy_to_clipboard(text: String, copied: UseStateHandle<bool>) {
         gloo_timers::future::TimeoutFuture::new(500).await;
         copied.set(false);
     });
-}
-
-fn parse_name(name: &str) -> (Option<String>, &str) {
-    let name = name.trim();
-    if let Some(end_bracket) = name.find(']') {
-        if name.starts_with('[') && end_bracket > 0 {
-            let variant = name[1..end_bracket].trim().to_string();
-            let character = name[end_bracket + 1..].trim();
-            let variant = if variant.is_empty() { None } else { Some(variant) };
-            return (variant, character);
-        }
-    }
-    (None, name)
 }
 
 use super::detail_modal::LegacyDetailModal;
@@ -139,7 +122,7 @@ pub fn LegacyVeteranSlot(props: &LegacyVeteranSlotProps) -> Html {
                     if let Some(selected) = &props.selected {
                         match selected {
                             LegacySlotValue::LegacyUma(vet) => {
-                                let (variant, character_name) = parse_name(&vet.name);
+                                let (variant, character_name) = parse_variant_name(&vet.name);
                                 html! {
                                     <>
                                         <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
@@ -196,7 +179,7 @@ pub fn LegacyVeteranSlot(props: &LegacyVeteranSlotProps) -> Html {
                                 }
                             }
                             LegacySlotValue::ParentUma(vet) => {
-                                let (variant, character_name) = parse_name(&vet.name);
+                                let (variant, character_name) = parse_variant_name(&vet.name);
                                 html! {
                                     <>
                                         <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
