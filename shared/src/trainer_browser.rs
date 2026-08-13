@@ -89,6 +89,9 @@ pub struct BorrowSupportCardInfo {
     pub card_rarity: i64,
     pub level: i64,
     pub limit_break_count: i64,
+    /// Whether the current user owns this card (as opposed to it being borrow-only).
+    #[serde(default)]
+    pub owned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

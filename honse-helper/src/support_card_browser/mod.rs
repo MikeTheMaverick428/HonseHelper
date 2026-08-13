@@ -9,6 +9,7 @@ use crate::{
 use serde_json::json;
 use shared::models::PaginationResponse;
 use shared::support_card_browser::*;
+use shared::trainer_browser::max_level_for_limit_break;
 use shared::veteran_browser::PresetData;
 use std::rc::Rc;
 use yew::prelude::*;
@@ -333,7 +334,13 @@ pub fn SupportCardBrowser() -> Html {
 
     let open_detail = {
         let detail_selected = detail_selected.clone();
-        Callback::from(move |card: SupportCardPageItem| {
+        Callback::from(move |mut card: SupportCardPageItem| {
+            if !card.owned && card.borrow_available {
+                card.level = card.borrow_level;
+                card.limit_break_count = card.borrow_limit_break_count;
+                card.max_level =
+                    max_level_for_limit_break(card.rarity, card.borrow_limit_break_count);
+            }
             detail_selected.set(Some(card));
         })
     };
@@ -445,6 +452,7 @@ pub fn SupportCardBrowser() -> Html {
             if let Some(card) = &*detail_selected {
                 <SupportCardDetailModal
                     card={card.clone()}
+                    borrow={!card.owned && card.borrow_available}
                     on_close={close_detail}
                 />
             }

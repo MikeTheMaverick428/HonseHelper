@@ -38,12 +38,14 @@ const BASE_COLS: &str = "\
     t.follower_num, \
     t.last_recheck_at, \
     t.updated_at, \
-    t.last_update_source";
+    t.last_update_source, \
+    CASE WHEN sco.support_card_id IS NOT NULL THEN 1 ELSE 0 END AS sc_owned";
 
 const FROM_CLAUSE: &str = "\
     FROM trainers t \
     LEFT JOIN trainer_support_card tsc ON tsc.trainer_id = t.trainer_id \
     LEFT JOIN support_card_data scd ON scd.id = tsc.support_card_id \
+    LEFT JOIN support_card_owned sco ON sco.support_card_id = tsc.support_card_id \
     LEFT JOIN trainee_data td ON td.id = t.borrow_uma_character_id";
 
 fn make_page_item(row: &rusqlite::Row) -> rusqlite::Result<TrainerPageItem> {
@@ -73,6 +75,7 @@ fn make_page_item(row: &rusqlite::Row) -> rusqlite::Result<TrainerPageItem> {
                 card_rarity,
                 level: lvl,
                 limit_break_count,
+                owned: row.get::<_, i64>(26)? != 0,
             })
         }
         None => None,

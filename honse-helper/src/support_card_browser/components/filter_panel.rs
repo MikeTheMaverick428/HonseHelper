@@ -4,7 +4,9 @@ use crate::styles::{
     worker_status::{ToggleCheckboxStyle, ToggleLabelStyle},
     Style,
 };
-use shared::support_card_browser::{SupportCardFilter, SupportCardFilterOptions, SupportCardSkillSources};
+use shared::support_card_browser::{
+    OwnershipStatus, SupportCardFilter, SupportCardFilterOptions, SupportCardSkillSources,
+};
 use yew::prelude::*;
 
 use crate::veteran_browser::components::custom_select::CustomSelect;
@@ -57,8 +59,8 @@ enum AddingType {
 
 fn filter_description(f: &SupportCardFilter, options: &SupportCardFilterOptions) -> String {
     match f {
-        SupportCardFilter::Owned { owned } => {
-            if *owned { "Owned".to_string() } else { "Not owned".to_string() }
+        SupportCardFilter::Ownership { status } => {
+            format!("Ownership: {}", status.label())
         }
         SupportCardFilter::NameSearch { search_text } => format!("Name: \"{}\"", search_text),
         SupportCardFilter::Rarity { rarity } => {
@@ -128,7 +130,7 @@ fn build_add_inputs(
     add_skill_hint: &UseStateHandle<bool>,
     add_skill_ce: &UseStateHandle<bool>,
     add_skill_re: &UseStateHandle<bool>,
-    add_owned: &UseStateHandle<bool>,
+    add_ownership: &UseStateHandle<String>,
     options: &SupportCardFilterOptions,
 ) -> Option<Html> {
     match adding {
@@ -136,30 +138,36 @@ fn build_add_inputs(
         AddingType::Owned => {
             let opts: Vec<SelectOption<String>> = vec![
                 SelectOption {
-                    value: "true".to_string(),
-                    label: "Owned".to_string(),
+                    value: "accessible".to_string(),
+                    label: OwnershipStatus::Accessible.label().to_string(),
                 },
                 SelectOption {
-                    value: "false".to_string(),
-                    label: "Not owned".to_string(),
+                    value: "borrow_only".to_string(),
+                    label: OwnershipStatus::BorrowOnly.label().to_string(),
+                },
+                SelectOption {
+                    value: "unowned".to_string(),
+                    label: OwnershipStatus::Unowned.label().to_string(),
+                },
+                SelectOption {
+                    value: "inaccessible".to_string(),
+                    label: OwnershipStatus::Inaccessible.label().to_string(),
                 },
             ];
-            let selected = if **add_owned {
-                "true".to_string()
+            let selected = if add_ownership.is_empty() {
+                None
             } else {
-                "false".to_string()
+                Some(add_ownership.to_string())
             };
             Some(html! {
                 <div class={FilterSectionStyle::CLASS_NAME}>
                     <label>{"Status"}</label>
                     <CustomSelect
                         options={opts}
-                        selected={Some(selected)}
+                        selected={selected}
                         on_change={
-                            let v = add_owned.clone();
-                            Callback::from(move |val: String| {
-                                v.set(val == "true");
-                            })
+                            let v = add_ownership.clone();
+                            Callback::from(move |val: String| v.set(val))
                         }
                         placeholder={"Select..."}
                     />
@@ -338,7 +346,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
     let add_skill_hint: UseStateHandle<bool> = use_state(|| true);
     let add_skill_ce: UseStateHandle<bool> = use_state(|| true);
     let add_skill_re: UseStateHandle<bool> = use_state(|| true);
-    let add_owned: UseStateHandle<bool> = use_state(|| true);
+    let add_ownership: UseStateHandle<String> = use_state(String::new);
     let add_filter_type: UseStateHandle<String> = use_state(String::new);
 
     let on_change = props.on_change.clone();
@@ -355,7 +363,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         let add_skill_hint = add_skill_hint.clone();
         let add_skill_ce = add_skill_ce.clone();
         let add_skill_re = add_skill_re.clone();
-        let add_owned = add_owned.clone();
+        let add_ownership = add_ownership.clone();
         Callback::from(move |_| {
             add_name.set(String::new());
             add_rarity.set(String::new());
@@ -368,7 +376,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
             add_skill_hint.set(true);
             add_skill_ce.set(true);
             add_skill_re.set(true);
-            add_owned.set(true);
+            add_ownership.set(String::new());
         })
     };
 
@@ -387,13 +395,20 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         let add_skill_hint = add_skill_hint.clone();
         let add_skill_ce = add_skill_ce.clone();
         let add_skill_re = add_skill_re.clone();
-        let add_owned = add_owned.clone();
+        let add_ownership = add_ownership.clone();
         let add_filter_type = add_filter_type.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             let new_filter = match &*adding {
                 AddingType::Owned => {
-                    Some(SupportCardFilter::Owned { owned: *add_owned })
+                    let status = match add_ownership.as_str() {
+                        "accessible" => OwnershipStatus::Accessible,
+                        "borrow_only" => OwnershipStatus::BorrowOnly,
+                        "unowned" => OwnershipStatus::Unowned,
+                        "inaccessible" => OwnershipStatus::Inaccessible,
+                        _ => return,
+                    };
+                    Some(SupportCardFilter::Ownership { status })
                 }
                 AddingType::Name => {
                     let text = (*add_name).clone();
@@ -487,7 +502,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         &add_skill_hint,
         &add_skill_ce,
         &add_skill_re,
-        &add_owned,
+        &add_ownership,
         &props.options,
     );
     let add_ui = match add_ui {
@@ -500,7 +515,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 AddingType::HasSkill => add_skill_id.is_some(),
                 AddingType::HasEffect => add_effect_type.is_some(),
                 AddingType::Character => add_character_id.is_some(),
-                AddingType::Owned => true,
+                AddingType::Owned => !add_ownership.is_empty(),
                 AddingType::None => false,
             };
             html! {

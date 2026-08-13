@@ -97,6 +97,12 @@ pub fn SupportCardCard(props: &SupportCardCardProps) -> Html {
                     </span>
                     <span style="color:#9ca3af;font-size:12px;">{format!("Lv{} /{}", props.card.level, props.card.max_level)}</span>
                 } else {
+                    if props.card.borrow_available {
+                        <span title={format!("Highest from followed trainers: Lv{} / LB{}", props.card.borrow_level, props.card.borrow_limit_break_count)}
+                              style="color:#4ade80;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid #22c55e66;border-radius:999px;background:#14532d33;">
+                            {"Borrow Available"}
+                        </span>
+                    }
                     <span style="color:#ef4444;font-size:11px;font-weight:600;">{"Not Owned"}</span>
                 }
             </div>

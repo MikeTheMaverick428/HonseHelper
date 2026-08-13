@@ -361,6 +361,9 @@ pub fn TrainerBrowser() -> Html {
                 stock: 0,
                 character_id: sc.character_id,
                 owned: false,
+                borrow_available: false,
+                borrow_level: 0,
+                borrow_limit_break_count: 0,
             }));
         })
     };

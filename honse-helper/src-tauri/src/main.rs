@@ -317,6 +317,7 @@ fn main() {
             handlers::support_card_browser::delete_support_card_preset,
             handlers::support_card_browser::list_support_card_presets,
             handlers::support_card_browser::get_support_card_detail,
+            handlers::support_card_browser::get_support_card_borrows,
             handlers::trainee_browser::open_trainee_browser,
             handlers::trainee_browser::get_trainee_browser_mode,
             handlers::trainee_browser::query_trainee_cards,

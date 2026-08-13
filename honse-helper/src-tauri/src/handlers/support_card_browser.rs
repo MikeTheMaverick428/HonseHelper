@@ -3,7 +3,7 @@ use rusqlite::params;
 use shared::{
     models::PaginationResponse,
     support_card_browser::{
-        SupportCardBrowserQuery, SupportCardDetail, SupportCardEventBranch,
+        SupportCardBorrowRow, SupportCardBrowserQuery, SupportCardDetail, SupportCardEventBranch,
         SupportCardEventChoiceDetail, SupportCardEventDetail, SupportCardEventRewardDetail,
         SupportCardFilterOptions, SupportCardPageItem, SupportCardSkillDetail, BROWSER_TYPE,
     },
@@ -529,4 +529,34 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
         skill_hints,
         events,
     })
+}
+
+/// Lists currently followed trainers who have the given support card set as their borrow,
+/// sorted by highest level / limit break first.
+#[tauri::command]
+pub fn get_support_card_borrows(support_card_id: i64) -> Result<Vec<SupportCardBorrowRow>, String> {
+    let conn = app_db::open_app_database_connection()?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.trainer_id, COALESCE(t.name, ''), \
+                    COALESCE(tsc.level, 0), COALESCE(tsc.limit_break_count, 0) \
+             FROM trainer_support_card tsc \
+             JOIN trainers t ON t.trainer_id = tsc.trainer_id \
+             WHERE tsc.support_card_id = ?1 AND t.is_following = 1 \
+             ORDER BY tsc.level DESC, tsc.limit_break_count DESC, t.name",
+        )
+        .map_err(|e| format!("borrows prepare failed: {e}"))?;
+    let rows = stmt
+        .query_map(params![support_card_id], |row| {
+            Ok(SupportCardBorrowRow {
+                trainer_id: row.get(0)?,
+                name: row.get(1)?,
+                level: row.get(2)?,
+                limit_break_count: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("borrows query failed: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("borrows collect failed: {e}"))?;
+    Ok(rows)
 }

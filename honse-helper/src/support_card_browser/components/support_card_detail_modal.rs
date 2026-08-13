@@ -1,3 +1,4 @@
+use crate::components::copyable::OwnerBadge;
 use crate::components::parse_variant_name;
 use crate::styles::detail_modal::*;
 use crate::styles::skill_pill::*;
@@ -12,9 +13,9 @@ use crate::veteran_browser::components::skill_pill::SkillPill;
 use shared::{
     models::SupportCardRarity,
     support_card_browser::{
-        SupportCardDetail, SupportCardEventBranch, SupportCardEventChoiceDetail,
-        SupportCardEventDetail, SupportCardEventRewardDetail, SupportCardPageItem,
-        SupportCardSkillDetail,
+        SupportCardBorrowRow, SupportCardDetail, SupportCardEventBranch,
+        SupportCardEventChoiceDetail, SupportCardEventDetail, SupportCardEventRewardDetail,
+        SupportCardPageItem, SupportCardSkillDetail,
     },
     SupportCardEffectRow, SupportCardUniqueEffectDetail,
 };
@@ -38,6 +39,8 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
     let events = use_state(Vec::new);
     let loading = use_state(|| true);
     let load_error = use_state(|| None::<String>);
+    let borrows = use_state(Vec::<SupportCardBorrowRow>::new);
+    let borrows_loading = use_state(|| false);
     let active_tab = use_state(|| 0usize);
     let selected_skill = use_state(|| None::<(i64, i64)>);
 
@@ -49,6 +52,9 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
         let loading = loading.clone();
         let load_error = load_error.clone();
         let card_id = props.card.support_card_id;
+        let owned = props.card.owned;
+        let borrows = borrows.clone();
+        let borrows_loading = borrows_loading.clone();
         use_effect_with((), move |_| {
             let card_id = card_id;
             wasm_bindgen_futures::spawn_local(async move {
@@ -75,6 +81,25 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                 }
                 loading.set(false);
             });
+            if !owned {
+                wasm_bindgen_futures::spawn_local(async move {
+                    borrows_loading.set(true);
+                    match invoke_tauri_command(
+                        "get_support_card_borrows",
+                        serde_json::json!({ "supportCardId": card_id }),
+                    )
+                    .await
+                    {
+                        Ok(val) => {
+                            if let Ok(rows) = serde_json::from_value::<Vec<SupportCardBorrowRow>>(val) {
+                                borrows.set(rows);
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    borrows_loading.set(false);
+                });
+            }
             || ()
         });
     }
@@ -84,7 +109,12 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
         Callback::from(move |_| cb.emit(()))
     };
 
-    let tab_labels = ["Overview", "Effects", "Skills", "Events"];
+    let show_borrows_tab = !props.card.owned && props.card.borrow_available;
+    let tab_labels: Vec<&str> = if show_borrows_tab {
+        vec!["Overview", "Effects", "Skills", "Events", "Borrows"]
+    } else {
+        vec!["Overview", "Effects", "Skills", "Events"]
+    };
 
     let on_tab = {
         let active_tab = active_tab.clone();
@@ -152,6 +182,8 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                         {render_skills(&skill_hints, on_skill_click.clone())}
                     } else if *active_tab == 3 {
                         {render_events(&events)}
+                    } else if *active_tab == 4 && show_borrows_tab {
+                        {render_borrows(&*borrows, *borrows_loading)}
                     }
                 </div>
             </div>
@@ -281,6 +313,52 @@ fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_le
                 </div>
             }
         }
+    }
+}
+
+fn render_borrows(borrows: &[SupportCardBorrowRow], loading: bool) -> Html {
+    if loading {
+        return html! {
+            <div class={DetailTabStyle::CLASS_NAME}>
+                <div style="color: #64748b;">{"Loading available borrows..."}</div>
+            </div>
+        };
+    }
+    if borrows.is_empty() {
+        return html! {
+            <div class={DetailTabStyle::CLASS_NAME}>
+                <div style="color: #64748b;">
+                    {"No currently followed trainer has this card set as their borrow."}
+                </div>
+            </div>
+        };
+    }
+
+    html! {
+        <div class={DetailTabStyle::CLASS_NAME}>
+            <div style="margin-bottom: 8px; font-size: 0.9em; color: #94a3b8;">
+                {"Available from "}{borrows.len()}{" followed trainer(s), best first"}
+            </div>
+            {for borrows.iter().map(|b| {
+                let lb = b.limit_break_count;
+                let is_mlb = lb >= 4;
+                html! {
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;margin-bottom:6px;">
+                        <span style="flex:1;font-weight:600;color:#e2e8f0;">{ &b.name }</span>
+                        <OwnerBadge owner_id={b.trainer_id as u64} label={"Trainer".to_string()} title="Click to copy trainer ID" />
+                        <span style="color:#9ca3af;font-size:12px;">{format!("Lv{}", b.level)}</span>
+                        <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
+                            {(0..4).map(|i| {
+                                let on = i < lb;
+                                html! {
+                                    <span class={format!("diamond{}", if on { " on" } else { "" })}></span>
+                                }
+                            }).collect::<Html>()}
+                        </span>
+                    </div>
+                }
+            })}
+        </div>
     }
 }
 

@@ -284,6 +284,12 @@ pub fn TrainerCard(props: &TrainerCardProps) -> Html {
                             <span class={TrainerNameStyle::CLASS_NAME}>{"Unknown"}</span>
                         }
                         <div class={SupportCardBadgeRowStyle::CLASS_NAME}>
+                            if !sc.owned {
+                                <span title="This card is not in your collection — only available as a borrow"
+                                      style="color:#fbbf24;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid #f59e0b66;border-radius:999px;background:#78350f33;">
+                                    {"Borrow Only"}
+                                </span>
+                            }
                             <span class={format!("{} {}", SupportCardRarityStyle::CLASS_NAME, rarity_class(sc.card_rarity))}>
                                 {rarity_label(sc.card_rarity)}
                             </span>

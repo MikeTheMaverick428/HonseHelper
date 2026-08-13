@@ -52,10 +52,33 @@ pub fn rarity_color(r: i64) -> &'static str {
 
 // ── Filter ───────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OwnershipStatus {
+    /// Owned by the user or available as a borrow from a followed trainer.
+    Accessible,
+    /// Not owned, but available as a borrow from a followed trainer.
+    BorrowOnly,
+    /// Not owned by the user.
+    Unowned,
+    /// Not owned and no followed trainer has it as their borrow.
+    Inaccessible,
+}
+
+impl OwnershipStatus {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accessible => "Accessible (owned or borrow)",
+            Self::BorrowOnly => "Borrow only",
+            Self::Unowned => "Unowned",
+            Self::Inaccessible => "Inaccessible (not owned, no borrow)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum SupportCardFilter {
-    Owned { owned: bool },
+    Ownership { status: OwnershipStatus },
     NameSearch { search_text: String },
     Rarity { rarity: i64 },
     CardType { card_type: i64 },
@@ -129,6 +152,15 @@ pub struct SupportCardPageItem {
     pub stock: i64,
     pub character_id: i64,
     pub owned: bool,
+    /// The card can be borrowed from at least one currently followed trainer.
+    #[serde(default)]
+    pub borrow_available: bool,
+    /// Highest level available among followed trainers' borrows.
+    #[serde(default)]
+    pub borrow_level: i64,
+    /// Highest limit-break count available among followed trainers' borrows.
+    #[serde(default)]
+    pub borrow_limit_break_count: i64,
 }
 
 // ── Filter Options ───────────────────────────────────────────────
@@ -186,6 +218,15 @@ pub struct SupportCardSkillDetail {
     pub skill_type: String,
     #[serde(default)]
     pub rarity: i64,
+}
+
+/// A single followed trainer currently borrowing the support card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SupportCardBorrowRow {
+    pub trainer_id: i64,
+    pub name: String,
+    pub level: i64,
+    pub limit_break_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
