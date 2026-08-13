@@ -9,6 +9,7 @@ pub mod gather_veterans;
 pub mod loading_overlay;
 pub mod notifications;
 pub mod sparks;
+pub mod sortable_table;
 pub mod tag_modal;
 pub mod wins_list;
 

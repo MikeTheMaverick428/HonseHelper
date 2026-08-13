@@ -232,12 +232,20 @@ pub struct SparkSummaryRow {
 // ── Inspiration Summary ─────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InspirationCarrierChance {
+    pub slot_label: String,
+    pub uma_name: String,
+    pub chance_pct: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InspirationSummaryRow {
     pub spark_group_id: i64,
     pub spark_name: String,
     pub spark_type: SparkType,
-    pub sparking_chance: f64,
-    pub career_chance: f64,
+    pub total_umas: usize,
+    pub total_stars: i32,
+    pub carriers: Vec<InspirationCarrierChance>,
 }
 
 impl LegacyPlannerSlot {
