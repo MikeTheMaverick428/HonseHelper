@@ -45,7 +45,6 @@ pub fn SupportCardBrowser() -> Html {
     let presets = use_state(Vec::<String>::new);
 
     let detail_selected = use_state(|| None::<SupportCardPageItem>);
-    let detail_loading = use_state(|| false);
 
     let (notification_state, push, remove) = use_timed_notification(3000);
 
@@ -206,7 +205,21 @@ pub fn SupportCardBrowser() -> Html {
         let run_query = run_query.clone();
         let sort = sort.clone();
         Callback::from(move |flt: Vec<SupportCardFilter>| {
-            run_query(flt, (*sort).clone(), 1);
+            let new_sort = (*sort).clone();
+            run_query(flt.clone(), new_sort.clone(), 1);
+            let fjson = serde_json::to_string(&flt).unwrap_or_default();
+            let sjson = serde_json::to_string(&new_sort).unwrap_or_default();
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = invoke_tauri_command(
+                    "save_support_card_preset",
+                    json!({
+                        "name": "__active__",
+                        "filters": fjson,
+                        "sort": sjson,
+                    }),
+                )
+                .await;
+            });
         })
     };
 
@@ -214,7 +227,21 @@ pub fn SupportCardBrowser() -> Html {
         let run_query = run_query.clone();
         let filters = filters.clone();
         Callback::from(move |srt: SupportCardSortConfig| {
-            run_query((*filters).clone(), srt, 1);
+            let new_filters = (*filters).clone();
+            run_query(new_filters.clone(), srt.clone(), 1);
+            let fjson = serde_json::to_string(&new_filters).unwrap_or_default();
+            let sjson = serde_json::to_string(&srt).unwrap_or_default();
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = invoke_tauri_command(
+                    "save_support_card_preset",
+                    json!({
+                        "name": "__active__",
+                        "filters": fjson,
+                        "sort": sjson,
+                    }),
+                )
+                .await;
+            });
         })
     };
 
@@ -233,13 +260,9 @@ pub fn SupportCardBrowser() -> Html {
 
     // Preset callbacks
     let load_preset = {
-        let filters = filters.clone();
-        let sort = sort.clone();
         let run_query = run_query.clone();
         let push = push.clone();
         Callback::from(move |name: String| {
-            let filters = filters.clone();
-            let sort = sort.clone();
             let run_query = run_query.clone();
             let push = push.clone();
             wasm_bindgen_futures::spawn_local(async move {

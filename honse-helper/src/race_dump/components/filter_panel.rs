@@ -279,7 +279,7 @@ pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
                         disabled={pending.is_none()}
                         onclick={on_add_clicked}
                     >
-                        {(if (*editing_idx).is_some() { "Save" } else { "Add" })}
+                        { if (*editing_idx).is_some() { "Save" } else { "Add" } }
                     </button>
                     <button class={SecondaryBtnStyle::CLASS_NAME} onclick={on_cancel}>
                         {"Cancel"}

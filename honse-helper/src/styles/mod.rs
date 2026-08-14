@@ -41,7 +41,6 @@ pub struct StyleDefinition {
 #[derive(Clone, PartialEq)]
 pub enum SelectorType {
     Class,
-    Id,
 }
 
 pub trait Style {
@@ -61,7 +60,6 @@ impl StyleManager {
             .for_each(|def| {
                 let selector = match def.selector_type {
                     SelectorType::Class => format!(".{}", def.class_name),
-                    SelectorType::Id => format!("#{}", def.class_name),
                 };
                 let css = def.css.replace("{{class}}", &selector);
                 css_rules.push(css);

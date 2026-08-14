@@ -1,7 +1,5 @@
-use crate::models::RewardType;
-use crate::{
-    SupportCardEffectRow, SupportCardSkillHintRow, SupportCardUniqueEffectDetail, SupportEventRow,
-};
+use crate::SupportCardEffectRow;
+use crate::SupportCardUniqueEffectDetail;
 use serde::{Deserialize, Serialize};
 
 pub const BROWSER_TYPE: &str = "support_card";

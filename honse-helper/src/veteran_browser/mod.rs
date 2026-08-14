@@ -141,7 +141,6 @@ pub fn VeteranBrowser() -> Html {
 
     // ── Reusable query runner ───────────────────────────────────
     // Takes explicit values (not state) so timing is never an issue.
-    let pn = push.clone();
     let run_query: Rc<
         dyn Fn(
             Vec<Filter>,

@@ -306,14 +306,6 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
         }
     };
 
-    let chara_id: i64 = conn
-        .query_row(
-            "SELECT character_id FROM support_card_data WHERE id = ?1",
-            [support_card_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("chara_id query: {e}"))?;
-
     let skill_hints = {
         let mut skills = Vec::new();
 
@@ -357,16 +349,15 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
                  FROM support_event_reward ser
                  JOIN support_event_choice sec ON sec.id = ser.choice_id
                  JOIN support_event se ON se.story_id = sec.story_id
-                 INNER JOIN support_card_data scd ON scd.id = se.support_card_id
+                 JOIN support_event_card sec2 ON sec2.story_id = se.story_id
                  LEFT JOIN skill_data sd ON sd.id = ser.skill_id
                  WHERE ser.reward_type = 11 AND ser.skill_id IS NOT NULL
-                   AND (se.support_card_id = ?1
-                        OR (se.category = 'random' AND scd.character_id = ?2))
+                   AND sec2.support_card_id = ?1
                  ORDER BY se.category = 'arrows' DESC, se.story_id",
             )
             .map_err(|e| format!("event skills prepare: {e}"))?;
         let evt_rows = evt_stmt
-            .query_map(params![support_card_id, chara_id], |row| {
+            .query_map([support_card_id], |row| {
                 let category: String = row.get(4)?;
                 let skill_type = SkillType::from(&SkillDataRow {
                     icon_id: row.get(5)?,
@@ -402,15 +393,14 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
             .prepare(
                 "SELECT se.story_id, se.event_name, se.category, se.conditions
                  FROM support_event se
-                 INNER JOIN support_card_data scd ON scd.id = se.support_card_id
-                 WHERE se.support_card_id = ?1
-                    OR (se.category = 'random' AND scd.character_id = ?2)
+                 JOIN support_event_card sec2 ON sec2.story_id = se.story_id
+                 WHERE sec2.support_card_id = ?1
                  ORDER BY se.category = 'arrows' DESC, se.story_id",
             )
             .map_err(|e| format!("events prepare: {e}"))?;
         let mut events = Vec::new();
         let rows = stmt
-            .query_map(params![support_card_id, chara_id], |row| {
+            .query_map([support_card_id], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
@@ -470,19 +460,25 @@ pub fn get_support_card_detail(support_card_id: i64) -> Result<SupportCardDetail
                                 .and_then(|s| serde_json::from_str::<Vec<i64>>(&s).ok());
                             let effect_id: Option<i64> = row.get(5)?;
                             let mut negative: bool = row.get(3)?;
-                            let effect_label: Option<String> = effect_id
-                                .and_then(|id| shared::models::ScenarioStatus::from_id(id))
-                                .map(|s| {
-                                    if s.negative() {
-                                        negative = true;
+                            let (effect_label, reward_label) =
+                                match shared::models::RewardType::status_reward_label(
+                                    reward_type,
+                                    effect_id,
+                                ) {
+                                    Some((label, neg)) => {
+                                        negative = neg;
+                                        let status_label = effect_id
+                                            .and_then(shared::models::ScenarioStatus::from_id)
+                                            .map(|s| s.label().to_string());
+                                        (status_label, label)
                                     }
-                                    s.label().to_string()
-                                });
-                            let reward_label = effect_label.clone().unwrap_or_else(|| {
-                                shared::models::RewardType::from_raw(reward_type)
-                                    .label()
-                                    .to_string()
-                            });
+                                    None => (
+                                        None,
+                                        shared::models::RewardType::from_raw(reward_type)
+                                            .label()
+                                            .to_string(),
+                                    ),
+                                };
                             Ok(SupportCardEventRewardDetail {
                                 reward_type,
                                 reward_label,

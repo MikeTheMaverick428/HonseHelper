@@ -529,9 +529,22 @@ impl VeteranStore {
                 None
             }
         });
-        let order_clause = if sort.key == "Affinity" {
+        let affinity_sort = sort.key == "Affinity";
+        let wsm_active = special_match.filter(|w| !w.group_ids.is_empty());
+
+        // When sorting by Affinity, the affinity is computed Rust-side, so the white-spark
+        // match scores must be selected alongside the hashes and applied as the primary sort
+        // in Rust (affinity becomes the tiebreaker on equal scores).
+        let mut score_exprs: Vec<String> = Vec::new();
+        let mut score_params: Vec<SqlParam> = Vec::new();
+        let order_clause = if affinity_sort {
+            if let Some(wsf) = wsm_active {
+                let (exprs, params) = Self::build_white_spark_match_scores(wsf);
+                score_exprs = exprs;
+                score_params = params;
+            }
             String::new()
-        } else if let Some(wsf) = special_match.filter(|w| !w.group_ids.is_empty()) {
+        } else if let Some(wsf) = wsm_active {
             let (sql, mut order_params) = Self::build_white_spark_match_order(wsf, sort);
             all_params.append(&mut order_params);
             sql
@@ -539,7 +552,21 @@ impl VeteranStore {
             Self::build_order_clause(sort)
         };
 
-        let sql = if order_clause.is_empty() {
+        let sql = if !score_exprs.is_empty() {
+            // The score subqueries live in the SELECT list, which appears before the WHERE
+            // clause, so their bound params must precede the WHERE params.
+            let mut full_params: Vec<SqlParam> = Vec::new();
+            full_params.append(&mut score_params);
+            full_params.append(&mut all_params);
+            all_params = full_params;
+            format!(
+                "SELECT v.hash, {} FROM veterans v \
+                 LEFT JOIN trainee_data td ON td.id = v.trainee_id \
+                 WHERE v.active = 1 AND v.is_browser = 1 AND ({})",
+                score_exprs.join(", "),
+                where_clause
+            )
+        } else if order_clause.is_empty() {
             format!(
                 "SELECT v.hash FROM veterans v \
                  LEFT JOIN trainee_data td ON td.id = v.trainee_id \
@@ -555,14 +582,38 @@ impl VeteranStore {
             )
         };
 
+        let score_count = score_exprs.len();
+
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| format!("prepare filter query failed: {e}"))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             all_params.iter().map(|p| p.as_ref()).collect();
 
-        let mut hashes: Vec<PaginatedVeteranHash> = stmt
-            .query_map(param_refs.as_slice(), |row| {
+        let mut wsm_scores: HashMap<u64, Vec<i64>> = HashMap::new();
+        let mut hashes: Vec<PaginatedVeteranHash> = if score_count > 0 {
+            let mut rows = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    let h: i64 = row.get(0)?;
+                    let mut scores: Vec<i64> = Vec::with_capacity(score_count);
+                    for i in 0..score_count {
+                        scores.push(row.get(i + 1)?);
+                    }
+                    Ok((h as u64, scores))
+                })
+                .map_err(|e| format!("filter query failed: {e}"))?;
+            let mut out = Vec::new();
+            while let Some(r) = rows.next() {
+                let (h, scores) = r.map_err(|e| format!("collect filter results failed: {e}"))?;
+                wsm_scores.insert(h, scores);
+                out.push(PaginatedVeteranHash {
+                    hash: h,
+                    affinity: None,
+                });
+            }
+            out
+        } else {
+            stmt.query_map(param_refs.as_slice(), |row| {
                 let h: i64 = row.get(0)?;
                 Ok(h as u64)
             })
@@ -576,7 +627,8 @@ impl VeteranStore {
                     })
                     .collect()
             })
-            .map_err(|e| format!("collect filter results failed: {e}"))?;
+            .map_err(|e| format!("collect filter results failed: {e}"))?
+        };
 
         // Step 3.5: Load any veteran data missing from the in-memory cache
         self.ensure_loaded(conn, hashes.iter().map(|h| h.hash))?;
@@ -629,16 +681,32 @@ impl VeteranStore {
             scored.retain(|h| h.affinity.map(|r| r.total()).unwrap_or(0) >= min_aff);
         }
 
-        // Sort by affinity
+        // Sort by affinity. When a WhiteSparkMatch filter is active, the white-spark match
+        // scores act as the primary sort key (DESC, in priority order) and affinity is the
+        // tiebreaker on equal scores.
         if sort.key == "Affinity" {
-            match sort.direction.as_str() {
-                "Asc" => scored.sort_by_key(|h| h.affinity.map(|r| r.total())),
-                _ => scored.sort_by(|a, b| {
-                    b.affinity
-                        .map(|r| r.total())
-                        .cmp(&a.affinity.map(|r| r.total()))
-                }),
-            }
+            let asc = sort.direction.as_str() == "Asc";
+            scored.sort_by(|a, b| {
+                if !wsm_scores.is_empty() {
+                    if let (Some(sa), Some(sb)) =
+                        (wsm_scores.get(&a.hash), wsm_scores.get(&b.hash))
+                    {
+                        for (va, vb) in sa.iter().zip(sb.iter()) {
+                            let ord = vb.cmp(va);
+                            if ord != std::cmp::Ordering::Equal {
+                                return ord;
+                            }
+                        }
+                    }
+                }
+                let aa = a.affinity.map(|r| r.total());
+                let bb = b.affinity.map(|r| r.total());
+                if asc {
+                    aa.cmp(&bb)
+                } else {
+                    bb.cmp(&aa)
+                }
+            });
         }
 
         hashes = scored;
@@ -1257,12 +1325,11 @@ impl VeteranStore {
         (conds.join(" AND "), values)
     }
 
-    /// ORDER BY for a WhiteSparkMatch filter: DESC score subqueries in priority order
-    /// (default MatchedCount > UmaCount > TotalStars), followed by the regular sort as tiebreaker.
-    fn build_white_spark_match_order(
+    /// Score subquery expressions (in priority order) + bound params for a WhiteSparkMatch
+    /// filter. Each expression is a correlated subquery against `veteran_spark_summary`.
+    fn build_white_spark_match_scores(
         wsf: &WhiteSparkMatchFilter,
-        sort: &SortConfig,
-    ) -> (String, Vec<SqlParam>) {
+    ) -> (Vec<String>, Vec<SqlParam>) {
         let (inner, inner_values) = Self::white_spark_match_conditions(wsf);
         let from = "FROM veteran_spark_summary vss \
                     JOIN spark_data sd ON sd.group_id = vss.spark_group_id";
@@ -1278,8 +1345,8 @@ impl VeteranStore {
             wsf.priorities.clone()
         };
 
-        let mut parts: Vec<String> = Vec::new();
-        let mut order_params: Vec<SqlParam> = Vec::new();
+        let mut exprs: Vec<String> = Vec::new();
+        let mut params: Vec<SqlParam> = Vec::new();
         for c in &criteria {
             let expr = match c {
                 WhiteSparkMatchCriterion::MatchedCount => format!(
@@ -1292,11 +1359,22 @@ impl VeteranStore {
                     "(SELECT COALESCE(SUM({level_col}), 0) {from} WHERE {inner})"
                 ),
             };
-            parts.push(format!("{expr} DESC"));
+            exprs.push(expr);
             for v in &inner_values {
-                order_params.push(Box::new(v.clone()));
+                params.push(Box::new(v.clone()));
             }
         }
+        (exprs, params)
+    }
+
+    /// ORDER BY for a WhiteSparkMatch filter: DESC score subqueries in priority order
+    /// (default MatchedCount > UmaCount > TotalStars), followed by the regular sort as tiebreaker.
+    fn build_white_spark_match_order(
+        wsf: &WhiteSparkMatchFilter,
+        sort: &SortConfig,
+    ) -> (String, Vec<SqlParam>) {
+        let (exprs, order_params) = Self::build_white_spark_match_scores(wsf);
+        let parts: Vec<String> = exprs.iter().map(|e| format!("{e} DESC")).collect();
 
         let base = Self::build_order_clause(sort);
         let order_clause = if parts.is_empty() {

@@ -207,6 +207,15 @@ CREATE INDEX IF NOT EXISTS idx_support_event_sc ON support_event(support_card_id
 CREATE INDEX IF NOT EXISTS idx_support_event_char ON support_event(character_id);
 CREATE INDEX IF NOT EXISTS idx_support_event_trainee ON support_event(trainee_id);
 
+CREATE TABLE IF NOT EXISTS support_event_card (
+    story_id INTEGER NOT NULL,
+    support_card_id INTEGER NOT NULL,
+    PRIMARY KEY (story_id, support_card_id),
+    FOREIGN KEY (story_id) REFERENCES support_event(story_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_event_card_sc ON support_event_card(support_card_id);
+
 CREATE TABLE IF NOT EXISTS support_event_choice (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     story_id INTEGER NOT NULL,
@@ -288,6 +297,7 @@ CREATE TABLE IF NOT EXISTS support_card_has_skill_hint (
 "#;
 
 pub const SUPPORT_EVENT_DROP_SQL: &str = "\
+    DROP TABLE IF EXISTS support_event_card; \
     DROP TABLE IF EXISTS support_event_reward; \
     DROP TABLE IF EXISTS support_event_branch; \
     DROP TABLE IF EXISTS support_event_choice; \
@@ -306,6 +316,13 @@ pub const SUPPORT_EVENT_CREATE_SQL: &str = "\
     CREATE INDEX IF NOT EXISTS idx_support_event_sc ON support_event(support_card_id); \
     CREATE INDEX IF NOT EXISTS idx_support_event_char ON support_event(character_id); \
     CREATE INDEX IF NOT EXISTS idx_support_event_trainee ON support_event(trainee_id); \
+    CREATE TABLE IF NOT EXISTS support_event_card (\
+        story_id INTEGER NOT NULL, \
+        support_card_id INTEGER NOT NULL, \
+        PRIMARY KEY (story_id, support_card_id), \
+        FOREIGN KEY (story_id) REFERENCES support_event(story_id) \
+    ); \
+    CREATE INDEX IF NOT EXISTS idx_support_event_card_sc ON support_event_card(support_card_id); \
     CREATE TABLE IF NOT EXISTS support_event_choice (\
         id INTEGER PRIMARY KEY AUTOINCREMENT, \
         story_id INTEGER NOT NULL, \

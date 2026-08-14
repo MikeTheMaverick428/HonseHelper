@@ -1,27 +1,21 @@
 use shared::legacy_planner::{LegacyPlannerSlot, LegacySlotValue};
+use shared::models::UmaRank;
 use yew::prelude::*;
 
 use crate::{
-    components::{SelectOption, parse_variant_name}, styles::{
+    components::{
+        SelectOption, copyable::{HashBadge, OwnerBadge}, parse_variant_name,
+    }, styles::{
         Style, legacy_veteran_slots::{
             LegacyVeteranSlotActionsStyle, LegacyVeteranSlotBodyStyle,
             LegacyVeteranSlotCardClearStyle, LegacyVeteranSlotCardHeaderStyle,
             LegacyVeteranSlotCardTitleStyle, LegacyVeteranSlotCharacterIdStyle,
             LegacyVeteranSlotCharacterNameStyle, LegacyVeteranSlotContainerStyle,
-        }, shared_components::HeaderActionButtonStyle, veteran_card::CardHashStyle,
-    },
+        }, shared_components::HeaderActionButtonStyle, veteran_card::{
+            CardBorrowedStyle, CardFavIconStyle, CardRankStyle, RankScoreStyle,
+        },
+    }, veteran_browser::components::rank_badge::RankBadge,
 };
-
-fn copy_to_clipboard(text: String, copied: UseStateHandle<bool>) {
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Some(window) = web_sys::window() {
-            let _ = window.navigator().clipboard().write_text(&text);
-        }
-        copied.set(true);
-        gloo_timers::future::TimeoutFuture::new(500).await;
-        copied.set(false);
-    });
-}
 
 use super::detail_modal::LegacyDetailModal;
 
@@ -67,10 +61,30 @@ fn lineage_color(slot: LegacyPlannerSlot) -> &'static str {
     }
 }
 
+fn format_rank(score: u32) -> String {
+    let score = i64::from(score);
+    if score >= 100_000_000 {
+        format!("UG+{:.1}", (score as f64 - 100_000_000.0) / 10_000_000.0)
+    } else if score >= 50_000_000 {
+        format!("UF+{:.1}", (score as f64 - 50_000_000.0) / 10_000_000.0)
+    } else if score >= 25_000_000 {
+        format!("UE+{:.1}", (score as f64 - 25_000_000.0) / 10_000_000.0)
+    } else if score >= 12_000_000 {
+        format!("UD+{:.1}", (score as f64 - 12_000_000.0) / 10_000_000.0)
+    } else if score >= 6_000_000 {
+        format!("UC+{:.1}", (score as f64 - 6_000_000.0) / 10_000_000.0)
+    } else if score >= 3_000_000 {
+        format!("UB+{:.1}", (score as f64 - 3_000_000.0) / 10_000_000.0)
+    } else if score >= 1_500_000 {
+        format!("UA+{:.1}", (score as f64 - 1_500_000.0) / 10_000_000.0)
+    } else {
+        format!("{}", score)
+    }
+}
+
 #[function_component]
 pub fn LegacyVeteranSlot(props: &LegacyVeteranSlotProps) -> Html {
     let show_detail = use_state(|| false);
-    let hash_copied = use_state(|| false);
 
     let open_details = {
         let show_detail = show_detail.clone();
@@ -125,17 +139,41 @@ pub fn LegacyVeteranSlot(props: &LegacyVeteranSlotProps) -> Html {
                                 let (variant, character_name) = parse_variant_name(&vet.name);
                                 html! {
                                     <>
-                                        <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+                                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
                                             <div style="display:flex;flex-direction:column;">
                                                 {if let Some(v) = &variant {
                                                     html! { <span style="font-size:11px;color:#94a3b8;">{v}</span> }
                                                 } else { html! {} }}
                                                     <span style="color:#f3f4f6;font-weight:600;font-size:14px;">{character_name}</span>
                                                 </div>
-                                                <span class={classes!(CardHashStyle::CLASS_NAME, (*hash_copied).then_some("hash-copied"))} style="font-size: 11px;" title="Copy hash"
-                                                    onclick={let h = format!("{:016x}", vet.hash); let c = hash_copied.clone(); Callback::from(move |e: MouseEvent| { e.stop_propagation(); copy_to_clipboard(h.clone(), c.clone()); })}>
-                                                    {format!("{:016x}", vet.hash)}
-                                                </span>
+                                                <HashBadge label="VET" hash={vet.hash} title="Click to copy trained chara hash" />
+                                                { for vet.min_hash.map(|h| html! {
+                                                    <HashBadge label="PRT" hash={h} title="Click to copy parent identity hash" />
+                                                }) }
+                                                { if vet.is_borrowed {
+                                                    vet.owner_id.map(|oid| html! { <OwnerBadge owner_id={oid} /> })
+                                                } else {
+                                                    None
+                                                }}
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                                            <span class={classes!(CardRankStyle::CLASS_NAME, vet.is_borrowed.then_some(CardBorrowedStyle::CLASS_NAME))}>
+                                                {
+                                                    if let Some(rank) = vet.rank {
+                                                        html! { <RankBadge rank={UmaRank::from_raw(rank)} /> }
+                                                    } else { html! {} }
+                                                }
+                                                {
+                                                    if let Some(score) = vet.rank_score {
+                                                        html! { <span class={RankScoreStyle::CLASS_NAME}>{ format_rank(score) }</span> }
+                                                    } else { html! {} }
+                                                }
+                                            </span>
+                                            {
+                                                if let Some(icon) = vet.favorite_icon {
+                                                    html! { <span class={CardFavIconStyle::CLASS_NAME} title="Favourite">{ icon.label() }</span> }
+                                                } else { html! {} }
+                                            }
                                         </div>
                                         <div class={LegacyVeteranSlotActionsStyle::CLASS_NAME}>
                                             {
@@ -182,19 +220,27 @@ pub fn LegacyVeteranSlot(props: &LegacyVeteranSlotProps) -> Html {
                                 let (variant, character_name) = parse_variant_name(&vet.name);
                                 html! {
                                     <>
-                                        <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+                                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
                                             <div style="display:flex;flex-direction:column;">
                                                 {if let Some(v) = &variant {
                                                     html! { <span style="font-size:11px;color:#94a3b8;">{v}</span> }
                                                 } else { html! {} }}
                                                 <span style="color:#f3f4f6;font-weight:600;font-size:14px;">{character_name}</span>
                                             </div>
-                                            <span style="font-size: 11px; color: #888; font-style: italic;">
-                                                {"(inherited)"}
-                                            </span>
-                                            <span class={classes!(CardHashStyle::CLASS_NAME, (*hash_copied).then_some("hash-copied"))} style="font-size: 11px;" title="Copy hash"
-                                                onclick={let h = format!("{:016x}", vet.hash); let c = hash_copied.clone(); Callback::from(move |e: MouseEvent| { e.stop_propagation(); copy_to_clipboard(h.clone(), c.clone()); })}>
-                                                {format!("{:016x}", vet.hash)}
+                                            <HashBadge label="PRT" hash={vet.hash} title="Click to copy parent identity hash" />
+                                            { if vet.is_borrowed {
+                                                vet.owner_id.map(|oid| html! { <OwnerBadge owner_id={oid} /> })
+                                            } else {
+                                                None
+                                            }}
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                                            <span class={classes!(CardRankStyle::CLASS_NAME, vet.is_borrowed.then_some(CardBorrowedStyle::CLASS_NAME))}>
+                                                {
+                                                    if let Some(rank) = vet.rank {
+                                                        html! { <RankBadge rank={UmaRank::from_raw(rank)} /> }
+                                                    } else { html! {} }
+                                                }
                                             </span>
                                         </div>
                                         <div class={LegacyVeteranSlotActionsStyle::CLASS_NAME}>

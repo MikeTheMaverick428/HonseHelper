@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     legacy_planner::lookup_dtos::SlimUma,
-    models::{CharacterOption, SparkType},
+    models::{CharacterOption, FavouriteIcon, SparkType},
 };
 
 pub mod lookup_dtos;
@@ -85,6 +85,16 @@ pub struct LegacyUma {
     #[serde(with = "opt_u64_as_str")]
     pub parent2_hash: Option<u64>,
     pub is_borrowed: bool,
+    #[serde(default)]
+    pub rank_score: Option<u32>,
+    #[serde(default)]
+    pub rank: Option<u16>,
+    #[serde(default)]
+    pub favorite_icon: Option<FavouriteIcon>,
+    #[serde(with = "opt_u64_as_str", default)]
+    pub min_hash: Option<u64>,
+    #[serde(with = "opt_u64_as_str", default)]
+    pub owner_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,6 +107,12 @@ pub struct ParentUma {
     pub major_wins: Vec<i64>,
     #[serde(default)]
     pub api_mode: bool,
+    #[serde(default)]
+    pub rank: Option<u16>,
+    #[serde(with = "opt_u64_as_str", default)]
+    pub owner_id: Option<u64>,
+    #[serde(default)]
+    pub is_borrowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

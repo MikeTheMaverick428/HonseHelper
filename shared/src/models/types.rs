@@ -83,7 +83,7 @@ impl SupportCardRarity {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FavouriteIcon {
     Carrot = 0,
     Rice = 1,
@@ -979,13 +979,13 @@ pub enum RewardType {
     Motivation = 10,
     Skill = 11,
     SkillBundle = 12,
-    ScenarioExp = 13,
-    Hearts = 14,
+    GainStatus = 13,
+    HealStatus = 14,
     BondRace = 15,
     BondChara = 16,
     Brief = 17,
     BriefPositive = 18,
-    Dash = 19,
+    DatingStart = 19,
     FiveStars = 20,
     Nl = 21,
     Sg = 22,
@@ -1014,13 +1014,13 @@ impl RewardType {
             10 => Self::Motivation,
             11 => Self::Skill,
             12 => Self::SkillBundle,
-            13 => Self::ScenarioExp,
-            14 => Self::Hearts,
+            13 => Self::GainStatus,
+            14 => Self::HealStatus,
             15 => Self::BondRace,
             16 => Self::BondChara,
             17 => Self::Brief,
             18 => Self::BriefPositive,
-            19 => Self::Dash,
+            19 => Self::DatingStart,
             20 => Self::FiveStars,
             21 => Self::Nl,
             22 => Self::Sg,
@@ -1050,13 +1050,13 @@ impl RewardType {
             Self::Motivation => "Motivation",
             Self::Skill => "Skill Hint",
             Self::SkillBundle => "Skill Bundle",
-            Self::ScenarioExp => "Scenario Exp",
-            Self::Hearts => "Hearts",
+            Self::GainStatus => "Gain Status",
+            Self::HealStatus => "Heal Status",
             Self::BondRace => "Bond (Race)",
             Self::BondChara => "Bond (Chara)",
             Self::Brief => "Brief",
             Self::BriefPositive => "Brief Positive",
-            Self::Dash => "Dash",
+            Self::DatingStart => "Dating Start",
             Self::FiveStars => "All stats",
             Self::Nl => "Nl",
             Self::Sg => "Sg",
@@ -1085,13 +1085,13 @@ impl RewardType {
             Self::Motivation => "Motivation level change",
             Self::Skill => "Skill hint (skill_id identifies the skill)",
             Self::SkillBundle => "Skill bundle (flag)",
-            Self::ScenarioExp => "Scenario experience (flag)",
-            Self::Hearts => "Hearts indicator (flag)",
+            Self::GainStatus => "Gains a scenario status (effect_id identifies the status)",
+            Self::HealStatus => "Heals a scenario status (effect_id identifies the status)",
             Self::BondRace => "Bond points from race",
             Self::BondChara => "Bond points from character",
             Self::Brief => "Brief event (flag)",
             Self::BriefPositive => "Brief positive event (flag)",
-            Self::Dash => "Dash event (flag)",
+            Self::DatingStart => "Can start dating",
             Self::FiveStars => "Five stars indicator (flag)",
             Self::Nl => "Nl indicator",
             Self::Sg => "Sg indicator (flag)",
@@ -1102,6 +1102,25 @@ impl RewardType {
             Self::RaceResult => "Race result indicator",
             Self::Place => "Place indicator",
             Self::FanEvent => "Fan event indicator",
+        }
+    }
+}
+
+impl RewardType {
+    /// Display label and polarity for scenario-status rewards.
+    /// - GainStatus: "Gain: <status>" — negative if the status itself is negative
+    /// - HealStatus: "Lose: <status>" — negative if the status being removed is positive
+    pub fn status_reward_label(reward_type: i64, effect_id: Option<i64>) -> Option<(String, bool)> {
+        match Self::from_raw(reward_type) {
+            Self::GainStatus => {
+                let status = effect_id.and_then(ScenarioStatus::from_id)?;
+                Some((format!("Gain: {}", status.label()), status.negative()))
+            }
+            Self::HealStatus => {
+                let status = effect_id.and_then(ScenarioStatus::from_id)?;
+                Some((format!("Lose: {}", status.label()), !status.negative()))
+            }
+            _ => None,
         }
     }
 }

@@ -616,7 +616,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 <div style="margin-top:8px;">
                     {inputs}
                     <div class={FilterActionsStyle::CLASS_NAME} style="margin-top:8px;">
-                        <button disabled={!can_add} onclick={add_filter}>{(if (*editing_idx).is_some() { "Save" } else { "Add" })}</button>
+                        <button disabled={!can_add} onclick={add_filter}>{if (*editing_idx).is_some() { "Save" } else { "Add" }}</button>
                         <button class={SecondaryBtnStyle::CLASS_NAME} onclick={cancel_adding}>{"Cancel"}</button>
                     </div>
                 </div>

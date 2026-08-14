@@ -99,7 +99,6 @@ fn meta_chip(label: &str, value: impl ToString, source: ChipSource) -> Html {
 #[function_component]
 pub fn TrainerCard(props: &TrainerCardProps) -> Html {
     let t = &props.trainer;
-    let hash_copied = use_state(|| false);
 
     let on_view = {
         let on_view_veteran = props.on_view_veteran.clone();

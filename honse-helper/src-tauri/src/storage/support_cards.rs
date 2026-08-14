@@ -124,8 +124,9 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
                         "EXISTS (SELECT 1 FROM support_event_reward ser \
                          JOIN support_event_choice sec ON sec.id = ser.choice_id \
                          JOIN support_event se ON se.story_id = sec.story_id \
+                         JOIN support_event_card sec2 ON sec2.story_id = se.story_id \
                          JOIN skill_data sd ON sd.id = ser.skill_id \
-                         WHERE se.support_card_id = scd.id \
+                         WHERE sec2.support_card_id = scd.id \
                            AND ser.reward_type = 11 AND {}= ? {})",
                         match_col, cat_filter
                     ));

@@ -224,9 +224,21 @@ fn can_set_as_trainee(state: &LegacyPlannerState, character_id: i64) -> bool {
 }
 
 fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, String> {
-    let row: Option<(String, i64, Option<i64>, Option<i64>, bool)> = conn
+    let row: Option<(
+        String,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        bool,
+        i64,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+    )> = conn
         .query_row(
-            "SELECT COALESCE(td.name, 'Unknown'), v.trainee_id, v.parent_a, v.parent_b, v.owned
+            "SELECT COALESCE(td.name, 'Unknown'), v.trainee_id, v.parent_a, v.parent_b, v.owned,
+                    v.rank, v.rank_score, v.favorite_icon_type, v.min_hash, v.owner_id
              FROM veterans v
              LEFT JOIN trainee_data td ON td.id = v.trainee_id
              WHERE v.hash = ?1",
@@ -238,13 +250,30 @@ fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, 
                     row.get::<_, Option<i64>>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, bool>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
                 ))
             },
         )
         .optional()
         .map_err(|e| format!("query veteran failed: {e}"))?;
 
-    let Some((name, trainee_id, parent_a, parent_b, owned)) = row else {
+    let Some((
+        name,
+        trainee_id,
+        parent_a,
+        parent_b,
+        owned,
+        rank,
+        rank_score,
+        favorite_icon_type,
+        min_hash,
+        owner_id,
+    )) = row
+    else {
         return Ok(None);
     };
 
@@ -305,23 +334,38 @@ fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, 
         parent1_hash: parent_a.map(|v| v as u64),
         parent2_hash: parent_b.map(|v| v as u64),
         is_borrowed: !owned,
+        rank_score: (rank_score > 0).then_some(rank_score as u32),
+        rank: (rank > 0).then_some(rank as u16),
+        favorite_icon: favorite_icon_type.and_then(|t| {
+            shared::models::FavouriteIcon::try_from(t as i16).ok()
+        }),
+        min_hash: min_hash.map(|h| h as u64),
+        owner_id: owner_id.map(|o| o as u64),
     }))
 }
 
 fn fetch_parent_uma(conn: &Connection, hash: u64) -> Result<Option<ParentUma>, String> {
-    let row: Option<(String, i64)> = conn
+    let row: Option<(String, i64, i64, Option<i64>, bool)> = conn
         .query_row(
-            "SELECT COALESCE(td.name, 'Unknown'), p.trainee_id
+            "SELECT COALESCE(td.name, 'Unknown'), p.trainee_id, p.rank, p.owner_id, p.owned
              FROM parents p
              LEFT JOIN trainee_data td ON td.id = p.trainee_id
              WHERE p.hash = ?1",
             params![hash as i64],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, bool>(4)?,
+                ))
+            },
         )
         .optional()
         .map_err(|e| format!("query parent failed: {e}"))?;
 
-    let Some((name, trainee_id)) = row else {
+    let Some((name, trainee_id, rank, owner_id, owned)) = row else {
         return Ok(None);
     };
 
@@ -385,6 +429,9 @@ fn fetch_parent_uma(conn: &Connection, hash: u64) -> Result<Option<ParentUma>, S
         spark_groups,
         major_wins,
         api_mode: false,
+        rank: (rank > 0).then_some(rank as u16),
+        owner_id: owner_id.map(|o| o as u64),
+        is_borrowed: !owned,
     }))
 }
 
@@ -613,6 +660,13 @@ pub fn set_legacy_planner_slot_uma_moe_veteran(
         parent1_hash: v.parent_a.map(|h| h.as_u64()),
         parent2_hash: v.parent_b.map(|h| h.as_u64()),
         is_borrowed: true,
+        rank_score: (v.rank_score > 0).then_some(v.rank_score),
+        rank: (v.rank > 0).then_some(v.rank),
+        favorite_icon: v
+            .favorite_icon_type
+            .and_then(|t| shared::models::FavouriteIcon::try_from(t as i16).ok()),
+        min_hash: v.min_hash.map(|h| h.as_u64()),
+        owner_id: v.owner_id,
     };
 
     if matches!(
@@ -684,6 +738,9 @@ pub fn set_legacy_planner_slot_uma_moe_veteran(
                         spark_groups: p_spark_groups,
                         major_wins: parent.container_major_wins.clone(),
                         api_mode: true,
+                        rank: (parent.rank > 0).then_some(parent.rank),
+                        owner_id: parent.owner_id,
+                        is_borrowed: !parent.owned,
                     };
 
                     set_slot_value(state, gp_slot, Some(LegacySlotValue::ParentUma(parent_uma)));
@@ -1712,7 +1769,7 @@ pub async fn open_legacy_planner_window(app: AppHandle) -> Result<(), String> {
         .join(label);
     WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
         .title("Legacy Planner")
-        .inner_size(1100.0, 850.0)
+        .inner_size(1300.0, 1000.0)
         .resizable(true)
         .data_directory(data_dir)
         .build()

@@ -976,19 +976,25 @@ fn load_trainee_events(
                             .and_then(|s| serde_json::from_str::<Vec<i64>>(&s).ok());
                         let effect_id: Option<i64> = row.get(5)?;
                         let mut negative: bool = row.get(3)?;
-                        let effect_label: Option<String> = effect_id
-                            .and_then(|id| shared::models::ScenarioStatus::from_id(id))
-                            .map(|s| {
-                                if s.negative() {
-                                    negative = true;
+                        let (effect_label, reward_label) =
+                            match shared::models::RewardType::status_reward_label(
+                                reward_type,
+                                effect_id,
+                            ) {
+                                Some((label, neg)) => {
+                                    negative = neg;
+                                    let status_label = effect_id
+                                        .and_then(shared::models::ScenarioStatus::from_id)
+                                        .map(|s| s.label().to_string());
+                                    (status_label, label)
                                 }
-                                s.label().to_string()
-                            });
-                        let reward_label = effect_label.clone().unwrap_or_else(|| {
-                            shared::models::RewardType::from_raw(reward_type)
-                                .label()
-                                .to_string()
-                        });
+                                None => (
+                                    None,
+                                    shared::models::RewardType::from_raw(reward_type)
+                                        .label()
+                                        .to_string(),
+                                ),
+                            };
                         Ok(TraineeEventRewardDetail {
                             reward_type,
                             reward_label,

@@ -589,10 +589,46 @@ fn render_choice(c: &SupportCardEventChoiceDetail) -> Html {
     }
 }
 
+fn category_badge(cat: &str) -> (String, &'static str) {
+    let (label, color) = match cat {
+        "arrows" => ("Chain", "#60a5fa"),
+        "random" => ("Random", "#a78bfa"),
+        "special" => ("Special", "#34d399"),
+        "dates" | "dates_random" => ("Dates", "#f472b6"),
+        _ => (cat, "#94a3b8"),
+    };
+    (label.to_string(), color)
+}
+
+fn category_group(cat: &str) -> &str {
+    match cat {
+        "dates" | "dates_random" => "dates",
+        other => other,
+    }
+}
+
+fn category_order(key: &str) -> usize {
+    match key {
+        "arrows" => 0,
+        "random" => 1,
+        "special" => 2,
+        "dates" => 3,
+        _ => 4,
+    }
+}
+
+fn section_title(key: &str) -> String {
+    match key {
+        "arrows" => "Chain Events".to_string(),
+        "random" => "Random Events".to_string(),
+        "special" => "Special Events".to_string(),
+        "dates" => "Dates".to_string(),
+        other => other.to_string(),
+    }
+}
+
 fn render_event_card(e: &SupportCardEventDetail) -> Html {
-    let is_chain = e.category == "arrows";
-    let kind = if is_chain { "Chain" } else { "Random" };
-    let kind_color = if is_chain { "#60a5fa" } else { "#a78bfa" };
+    let (kind, kind_color) = category_badge(&e.category);
     html! {
         <div style="margin-bottom: 12px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;">
             <div style="display: flex; align-items: center; margin-bottom: 8px;">
@@ -615,10 +651,38 @@ fn render_events(events: &[SupportCardEventDetail]) -> Html {
         };
     }
 
+    let mut order: Vec<&str> = Vec::new();
+    let mut groups: std::collections::HashMap<&str, Vec<&SupportCardEventDetail>> =
+        std::collections::HashMap::new();
+    for e in events {
+        let key = category_group(&e.category);
+        if !groups.contains_key(key) {
+            order.push(key);
+        }
+        groups.entry(key).or_default().push(e);
+    }
+    order.sort_by_key(|k| category_order(k));
+
     html! {
         <div class={DetailTabStyle::CLASS_NAME}>
             <div class={SupportCardListStyle::CLASS_NAME}>
-                {for events.iter().map(|e| render_event_card(e))}
+                {for order.iter().map(|key| {
+                    let (_, color) = category_badge(key);
+                    html! {
+                        <div style="margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <span style={format!("font-size: 0.85em; font-weight: 600; color: {};", color)}>
+                                    {section_title(key)}
+                                </span>
+                                <span style="font-size: 0.75em; color: #64748b;">
+                                    {groups.get(key).unwrap().len()}
+                                </span>
+                                <span style="flex: 1; height: 1px; background: #1e293b;"></span>
+                            </div>
+                            {for groups.get(key).unwrap().iter().map(|e| render_event_card(e))}
+                        </div>
+                    }
+                })}
             </div>
         </div>
     }
