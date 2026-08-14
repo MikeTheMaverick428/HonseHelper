@@ -117,6 +117,19 @@ fn filter_description(f: &SupportCardFilter, options: &SupportCardFilterOptions)
     }
 }
 
+fn filter_to_adding_type(f: &SupportCardFilter) -> Option<(&'static str, AddingType)> {
+    match f {
+        SupportCardFilter::Ownership { .. } => Some(("owned", AddingType::Owned)),
+        SupportCardFilter::NameSearch { .. } => Some(("name", AddingType::Name)),
+        SupportCardFilter::Rarity { .. } => Some(("rarity", AddingType::Rarity)),
+        SupportCardFilter::CardType { .. } => Some(("card_type", AddingType::CardType)),
+        SupportCardFilter::LimitBreak { .. } => Some(("limit_break", AddingType::LimitBreak)),
+        SupportCardFilter::HasEffect { .. } => Some(("has_effect", AddingType::HasEffect)),
+        SupportCardFilter::Character { .. } => Some(("character", AddingType::Character)),
+        SupportCardFilter::HasSkill { .. } => Some(("has_skill", AddingType::HasSkill)),
+    }
+}
+
 fn build_add_inputs(
     adding: &AddingType,
     add_name: &UseStateHandle<String>,
@@ -348,6 +361,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
     let add_skill_re: UseStateHandle<bool> = use_state(|| true);
     let add_ownership: UseStateHandle<String> = use_state(String::new);
     let add_filter_type: UseStateHandle<String> = use_state(String::new);
+    let editing_idx: UseStateHandle<Option<usize>> = use_state(|| None);
 
     let on_change = props.on_change.clone();
 
@@ -380,6 +394,69 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         })
     };
 
+    let open_edit = {
+        let filters = props.filters.clone();
+        let adding = adding.clone();
+        let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
+        let reset_all_inputs = reset_all_inputs.clone();
+        let add_name = add_name.clone();
+        let add_rarity = add_rarity.clone();
+        let add_card_type = add_card_type.clone();
+        let add_lb_min = add_lb_min.clone();
+        let add_lb_max = add_lb_max.clone();
+        let add_effect_type = add_effect_type.clone();
+        let add_character_id = add_character_id.clone();
+        let add_skill_id = add_skill_id.clone();
+        let add_skill_hint = add_skill_hint.clone();
+        let add_skill_ce = add_skill_ce.clone();
+        let add_skill_re = add_skill_re.clone();
+        let add_ownership = add_ownership.clone();
+        Callback::from(move |idx: usize| {
+            let Some(f) = filters.get(idx) else { return };
+            let Some((value, t)) = filter_to_adding_type(f) else { return };
+            reset_all_inputs.emit(());
+            adding.set(t);
+            add_filter_type.set(value.to_string());
+            editing_idx.set(Some(idx));
+            match f {
+                SupportCardFilter::Ownership { status } => {
+                    let v = match status {
+                        OwnershipStatus::Accessible => "accessible",
+                        OwnershipStatus::BorrowOnly => "borrow_only",
+                        OwnershipStatus::Unowned => "unowned",
+                        OwnershipStatus::Inaccessible => "inaccessible",
+                    };
+                    add_ownership.set(v.to_string());
+                }
+                SupportCardFilter::NameSearch { search_text } => add_name.set(search_text.clone()),
+                SupportCardFilter::Rarity { rarity } => add_rarity.set(rarity.to_string()),
+                SupportCardFilter::CardType { card_type } => add_card_type.set(card_type.to_string()),
+                SupportCardFilter::LimitBreak { min, max } => {
+                    add_lb_min.set(min.to_string());
+                    add_lb_max.set(max.to_string());
+                }
+                SupportCardFilter::HasEffect { effect_type } => {
+                    add_effect_type.set(Some(*effect_type))
+                }
+                SupportCardFilter::Character { character_id } => {
+                    add_character_id.set(Some(*character_id))
+                }
+                SupportCardFilter::HasSkill {
+                    group_id,
+                    exact_skill_id,
+                    sources,
+                } => {
+                    let val = exact_skill_id.map(|id| -id).unwrap_or(*group_id);
+                    add_skill_id.set(Some(val));
+                    add_skill_hint.set(sources.hint);
+                    add_skill_ce.set(sources.chain_event);
+                    add_skill_re.set(sources.random_event);
+                }
+            }
+        })
+    };
+
     let add_filter = {
         let on_change = on_change.clone();
         let adding = adding.clone();
@@ -397,6 +474,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
         let add_skill_re = add_skill_re.clone();
         let add_ownership = add_ownership.clone();
         let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             let new_filter = match &*adding {
@@ -459,11 +537,19 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
             };
             if let Some(f) = new_filter {
                 let mut updated = filters.clone();
-                updated.push(f);
+                match *editing_idx {
+                    Some(i) if i < updated.len() => {
+                        updated[i] = f;
+                    }
+                    _ => {
+                        updated.push(f);
+                    }
+                }
                 on_change.emit(updated);
             }
             adding.set(AddingType::None);
             add_filter_type.set(String::new());
+            editing_idx.set(None);
             reset_all_inputs.emit(());
         })
     };
@@ -471,10 +557,12 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
     let cancel_adding = {
         let adding = adding.clone();
         let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             adding.set(AddingType::None);
             add_filter_type.set(String::new());
+            editing_idx.set(None);
             reset_all_inputs.emit(());
         })
     };
@@ -482,10 +570,16 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
     let remove_filter = {
         let on_change = on_change.clone();
         let filters = props.filters.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |idx: usize| {
             let mut updated = filters.clone();
             updated.remove(idx);
             on_change.emit(updated);
+            match *editing_idx {
+                Some(e) if e == idx => editing_idx.set(None),
+                Some(e) if e > idx => editing_idx.set(Some(e - 1)),
+                _ => {}
+            }
         })
     };
 
@@ -522,7 +616,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 <div style="margin-top:8px;">
                     {inputs}
                     <div class={FilterActionsStyle::CLASS_NAME} style="margin-top:8px;">
-                        <button disabled={!can_add} onclick={add_filter}>{"Add"}</button>
+                        <button disabled={!can_add} onclick={add_filter}>{(if (*editing_idx).is_some() { "Save" } else { "Add" })}</button>
                         <button class={SecondaryBtnStyle::CLASS_NAME} onclick={cancel_adding}>{"Cancel"}</button>
                     </div>
                 </div>
@@ -552,14 +646,26 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                 <div style="margin-bottom:12px;">
                     {for props.filters.iter().enumerate().map(|(i, f)| {
                         let desc = filter_description(f, &props.options);
-                        let onclick = {
+                        let remove = {
                             let remove_filter = remove_filter.clone();
                             Callback::from(move |_| remove_filter.emit(i))
                         };
+                        let edit = {
+                            let open_edit = open_edit.clone();
+                            Callback::from(move |_| open_edit.emit(i))
+                        };
+                        let is_editing = matches!(*editing_idx, Some(e) if e == i);
+                        let pill_style = if is_editing {
+                            "border:1px solid #f59e0b;".to_string()
+                        } else {
+                            "border:1px solid #334155;".to_string()
+                        };
                         html! {
-                            <div key={i} class={FilterChipStyle::CLASS_NAME}>
-                                <span style="flex:1;color:#e2e8f0;">{desc}</span>
-                                <button onclick={onclick} class={FilterChipRemoveStyle::CLASS_NAME}>{"\u{00D7}"}</button>
+                            <div key={i} class={FilterChipStyle::CLASS_NAME} style={pill_style}>
+                                <button type="button" onclick={edit} class={FilterChipTextStyle::CLASS_NAME} style="text-align:left;background:none;border:none;cursor:pointer;padding:0;font-size:12px;color:#e2e8f0;">
+                                    {desc}
+                                </button>
+                                <button onclick={remove} class={FilterChipRemoveStyle::CLASS_NAME}>{"\u{00D7}"}</button>
                             </div>
                         }
                     })}
@@ -567,6 +673,11 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
             }
 
             <div class={FilterTitleStyle::CLASS_NAME}>{"Add Filter"}</div>
+            if (*editing_idx).is_some() {
+                <div style="color:#f59e0b;font-size:12px;margin-bottom:6px;">
+                    {"Editing existing filter — click Save to apply changes"}
+                </div>
+            }
             <div class={FilterSectionStyle::CLASS_NAME}>
                 <SearchableSelect<String>
                     options={
@@ -597,6 +708,7 @@ pub fn ScFilterPanel(props: &ScFilterPanelProps) -> Html {
                         });
                     })}
                     placeholder={"Select type..."}
+                    disabled={(*editing_idx).is_some()}
                 />
             </div>
 

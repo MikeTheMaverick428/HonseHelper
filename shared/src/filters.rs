@@ -35,6 +35,43 @@ pub struct WhiteSparkFilter {
     pub shared_count: Option<i8>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WhiteSparkMatchCriterion {
+    MatchedCount,
+    UmaCount,
+    TotalStars,
+}
+
+impl WhiteSparkMatchCriterion {
+    pub fn all() -> [WhiteSparkMatchCriterion; 3] {
+        [
+            WhiteSparkMatchCriterion::MatchedCount,
+            WhiteSparkMatchCriterion::UmaCount,
+            WhiteSparkMatchCriterion::TotalStars,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            WhiteSparkMatchCriterion::MatchedCount => "Matched skills",
+            WhiteSparkMatchCriterion::UmaCount => "Shared umas",
+            WhiteSparkMatchCriterion::TotalStars => "Total stars",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct WhiteSparkMatchFilter {
+    pub group_ids: Vec<i64>,
+    pub min_stars: Option<i32>,
+    pub max_stars: Option<i32>,
+    pub on_trainee: bool,
+    pub shared_count: Option<i8>,
+    pub min_matched: Option<i32>,
+    pub priorities: Vec<WhiteSparkMatchCriterion>,
+}
+
 impl WhiteSparkFilter {
     pub fn matches(&self, group: &SparkGroupInfo, skip_group_id: bool) -> bool {
         if !skip_group_id && !self.group_ids.contains(&(group.spark_group_id as i64)) {
@@ -332,6 +369,7 @@ pub enum Filter {
     },
     TrainerId(Vec<i64>),
     WhiteSpark(WhiteSparkFilter),
+    WhiteSparkMatch(WhiteSparkMatchFilter),
 }
 
 impl Filter {

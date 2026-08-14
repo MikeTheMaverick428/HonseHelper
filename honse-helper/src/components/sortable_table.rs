@@ -160,7 +160,7 @@ where
         };
 
         html! {
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px;">
                 <thead>
                     <tr style="background: #1e293b; color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em;">
                         { for header }
@@ -197,7 +197,7 @@ where
             ""
         };
         let style = format!(
-            "position: sticky; top: 0; background: #1e293b; padding: 8px 12px; text-align: {}; border-bottom: 1px solid #334155; {}",
+            "background: #1e293b; position: sticky; top: 0; z-index: 1; padding: 8px 12px; text-align: {}; border-bottom: 1px solid #334155; {}",
             col.align.css(),
             cursor,
         );

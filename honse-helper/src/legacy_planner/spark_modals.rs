@@ -278,7 +278,7 @@ pub fn WhiteSparkChanceModal(props: &WhiteSparkChanceModalProps) -> Html {
                         })}
                     </div>
 
-                    <div style="flex: 1; min-height: 0; overflow: auto;">
+                    <div style="flex: 1; min-height: 0; overflow-y: auto;">
                         <SortableTable::<SparkSummaryRow, WhiteSortCol>
                             rows={filtered}
                             columns={white_columns()}
@@ -521,7 +521,7 @@ pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
 
     html! {
         <div class={ModalOverlayStyle::CLASS_NAME} onclick={on_close.clone()}>
-            <div class={ModalContentStyle::CLASS_NAME} onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                <div class={ModalContentStyle::CLASS_NAME} style="max-width: 620px;" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
                 <div class={ModalHeaderStyle::CLASS_NAME}>
                     <h2 style="margin: 0;">{"Spark Inspiration Chance"}</h2>
                     <button onclick={on_close.clone()} class={ModalCloseStyle::CLASS_NAME}>{"\u{00D7}"}</button>
@@ -568,7 +568,7 @@ pub fn InspirationChanceModal(props: &InspirationChanceModalProps) -> Html {
                         })}
                     </div>
 
-                    <div style="flex: 1; min-height: 0; overflow: auto;">
+                    <div style="flex: 1; min-height: 0; overflow-y: auto;">
                         <SortableTable::<InspireRow, InspireSortCol>
                             rows={filtered}
                             columns={inspire_columns()}

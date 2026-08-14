@@ -796,6 +796,13 @@ pub fn VeteranBrowser() -> Html {
                         }
                     }
                 }
+                Filter::WhiteSparkMatch(wsf) => {
+                    for gid in &wsf.group_ids {
+                        if !ids.contains(gid) {
+                            ids.push(*gid);
+                        }
+                    }
+                }
                 _ => {}
             }
         }

@@ -157,6 +157,9 @@ impl Style for FilterChipTextStyle {
     const CSS: &'static str = r#"
         {{class}} {
             flex: 1;
+            min-width: 0;
+            white-space: normal;
+            overflow-wrap: break-word;
             color: #e2e8f0;
         }
     "#;

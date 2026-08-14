@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "honse-helper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "honse-helper-frontend"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "gloo-console 0.3.0",
@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "honse-worker"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "il2cpp_runtime",
@@ -2794,7 +2794,7 @@ dependencies = [
 
 [[package]]
 name = "il2cpp_runtime"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5113,7 +5113,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bincode",

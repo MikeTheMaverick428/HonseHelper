@@ -107,19 +107,62 @@ fn adding_type_to_key(t: &AddingType) -> Option<String> {
     .map(String::from)
 }
 
+fn filter_to_adding_type(f: &RaceDumpFilter) -> Option<(&'static str, AddingType)> {
+    match f {
+        RaceDumpFilter::RaceType(_) => Some(("race_type", AddingType::RaceType)),
+        RaceDumpFilter::DistanceMeters { .. } => {
+            Some(("distance_meters", AddingType::DistanceMeters))
+        }
+        RaceDumpFilter::Distance(_) => Some(("distance", AddingType::Distance)),
+        RaceDumpFilter::GroundType(_) => Some(("ground", AddingType::GroundType)),
+        RaceDumpFilter::Season(_) => Some(("season", AddingType::Season)),
+        RaceDumpFilter::Weather(_) => Some(("weather", AddingType::Weather)),
+        RaceDumpFilter::GroundCondition(_) => Some(("condition", AddingType::GroundCondition)),
+        RaceDumpFilter::Character(_) => Some(("character", AddingType::Character)),
+        RaceDumpFilter::Trainee(_) => Some(("trainee", AddingType::Trainee)),
+        RaceDumpFilter::VeteranHash(_) => Some(("veteran_hash", AddingType::VeteranHash)),
+        RaceDumpFilter::HasTag(_) => Some(("tag", AddingType::HasTag)),
+        RaceDumpFilter::CaptureDate(_) => Some(("date", AddingType::CaptureDate)),
+    }
+}
+
 #[function_component]
 pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
     let adding = use_state(|| AddingType::None);
     let pending = use_state(|| None::<RaceDumpFilter>);
+    let editing_idx: UseStateHandle<Option<usize>> = use_state(|| None);
+    let edit_nonce: UseStateHandle<u32> = use_state(|| 0);
     let options = props.options.clone();
 
     let remove_filter = {
         let filters = props.filters.clone();
         let on_change = props.on_change.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |idx: usize| {
             let mut nf = filters.clone();
             nf.remove(idx);
             on_change.emit(nf);
+            match *editing_idx {
+                Some(e) if e == idx => editing_idx.set(None),
+                Some(e) if e > idx => editing_idx.set(Some(e - 1)),
+                _ => {}
+            }
+        })
+    };
+
+    let open_edit = {
+        let filters = props.filters.clone();
+        let adding = adding.clone();
+        let pending = pending.clone();
+        let editing_idx = editing_idx.clone();
+        let edit_nonce = edit_nonce.clone();
+        Callback::from(move |idx: usize| {
+            let Some(f) = filters.get(idx) else { return };
+            let Some((_, t)) = filter_to_adding_type(f) else { return };
+            adding.set(t);
+            pending.set(Some(f.clone()));
+            editing_idx.set(Some(idx));
+            edit_nonce.set(*edit_nonce + 1);
         })
     };
 
@@ -144,23 +187,34 @@ pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
         let pending = pending.clone();
         let on_change = props.on_change.clone();
         let filters = props.filters.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |_: MouseEvent| {
             if let Some(f) = (*pending).clone() {
                 let mut nf = filters.clone();
-                nf.push(f);
+                match *editing_idx {
+                    Some(i) if i < nf.len() => {
+                        nf[i] = f;
+                    }
+                    _ => {
+                        nf.push(f);
+                    }
+                }
                 on_change.emit(nf);
             }
             adding.set(AddingType::None);
             pending.set(None);
+            editing_idx.set(None);
         })
     };
 
     let on_cancel = {
         let adding = adding.clone();
         let pending = pending.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |_: MouseEvent| {
             adding.set(AddingType::None);
             pending.set(None);
+            editing_idx.set(None);
         })
     };
 
@@ -175,26 +229,49 @@ pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
             {props.filters.iter().enumerate().map(|(idx, f)| {
                 let label = filter_label(f, options.as_ref());
                 let remove = remove_filter.clone();
-                let onclick = Callback::from(move |_| remove.emit(idx));
+                let remove_click = Callback::from(move |_| remove.emit(idx));
+                let edit = {
+                    let open_edit = open_edit.clone();
+                    Callback::from(move |_| open_edit.emit(idx))
+                };
+                let is_editing = matches!(*editing_idx, Some(e) if e == idx);
+                let pill_style = if is_editing {
+                    "border:1px solid #f59e0b;".to_string()
+                } else {
+                    "border:1px solid #334155;".to_string()
+                };
                 html! {
-                    <div class={FilterChipStyle::CLASS_NAME}>
-                        <span class={FilterChipTextStyle::CLASS_NAME}>{label}</span>
-                        <button class={FilterChipRemoveStyle::CLASS_NAME} onclick={onclick}>{"✕"}</button>
+                    <div class={FilterChipStyle::CLASS_NAME} style={pill_style}>
+                        <button type="button" onclick={edit} class={FilterChipTextStyle::CLASS_NAME} style="text-align:left;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">
+                            {label}
+                        </button>
+                        <button class={FilterChipRemoveStyle::CLASS_NAME} onclick={remove_click}>{"✕"}</button>
                     </div>
                 }
             }).collect::<Html>()}
 
             <div style="margin-top: 12px; border-top: 1px solid #1f2937; padding-top: 12px;">
+                if (*editing_idx).is_some() {
+                    <div style="color:#f59e0b;font-size:12px;margin-bottom:6px;">
+                        {"Editing existing filter — click Save to apply changes"}
+                    </div>
+                }
                 <FilterTypePicker
                     selected={adding_type_to_key(&(*adding))}
                     on_select={on_type_select}
+                    disabled={(*editing_idx).is_some()}
                 />
             </div>
 
             if *adding != AddingType::None {
                 <FilterEditor
+                    key={match *editing_idx {
+                        Some(i) => format!("edit-{}-{}", i, *edit_nonce),
+                        None => "edit-none".to_string(),
+                    }}
                     current={(*adding).clone()}
                     options={options}
+                    initial={(*pending).clone()}
                     on_pending={on_pending.clone()}
                 />
                 <div class={FilterActionsStyle::CLASS_NAME} style="margin-top:8px;">
@@ -202,7 +279,7 @@ pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
                         disabled={pending.is_none()}
                         onclick={on_add_clicked}
                     >
-                        {"Add"}
+                        {(if (*editing_idx).is_some() { "Save" } else { "Add" })}
                     </button>
                     <button class={SecondaryBtnStyle::CLASS_NAME} onclick={on_cancel}>
                         {"Cancel"}
@@ -219,6 +296,8 @@ pub fn RaceFilterPanel(props: &RaceFilterPanelProps) -> Html {
 struct FilterTypePickerProps {
     selected: Option<String>,
     on_select: Callback<AddingType>,
+    #[prop_or_default]
+    disabled: bool,
 }
 
 #[function_component]
@@ -302,6 +381,7 @@ fn FilterTypePicker(props: &FilterTypePickerProps) -> Html {
             selected={props.selected.clone()}
             on_select={on_select}
             placeholder={"Add Filter…".to_string()}
+            disabled={props.disabled}
         />
     }
 }
@@ -311,6 +391,7 @@ fn FilterTypePicker(props: &FilterTypePickerProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct RaceTypeFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -325,10 +406,18 @@ fn RaceTypeFilter(props: &RaceTypeFilterProps) -> Html {
             label: "TeamStadium".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::RaceType(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::race_dump_types::RaceType>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::RaceType(v))))
@@ -341,12 +430,20 @@ fn RaceTypeFilter(props: &RaceTypeFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct DistanceMetersFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
 fn DistanceMetersFilter(props: &DistanceMetersFilterProps) -> Html {
-    let min_val = use_state(String::new);
-    let max_val = use_state(String::new);
+    let (min0, max0) = match &props.initial {
+        Some(RaceDumpFilter::DistanceMeters { min, max }) => (
+            min.map(|m| m.to_string()).unwrap_or_default(),
+            max.map(|m| m.to_string()).unwrap_or_default(),
+        ),
+        _ => (String::new(), String::new()),
+    };
+    let min_val = use_state(|| min0);
+    let max_val = use_state(|| max0);
 
     let emit_pending = {
         let min_val = min_val.clone();
@@ -387,6 +484,7 @@ fn DistanceMetersFilter(props: &DistanceMetersFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct DistanceFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -409,10 +507,18 @@ fn DistanceFilter(props: &DistanceFilterProps) -> Html {
             label: "Long (>2500m)".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::Distance(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::models::RaceDistance>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::Distance(v))))
@@ -425,11 +531,16 @@ fn DistanceFilter(props: &DistanceFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct VeteranHashFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
 fn VeteranHashFilter(props: &VeteranHashFilterProps) -> Html {
-    let hash_val = use_state(String::new);
+    let hash0 = match &props.initial {
+        Some(RaceDumpFilter::VeteranHash(h)) => format!("{:x}", *h as u64),
+        _ => String::new(),
+    };
+    let hash_val = use_state(|| hash0);
     let emit_pending = {
         let hash_val = hash_val.clone();
         let cb = props.on_pending.clone();
@@ -463,6 +574,7 @@ fn VeteranHashFilter(props: &VeteranHashFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct GroundTypeFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -477,10 +589,18 @@ fn GroundTypeFilter(props: &GroundTypeFilterProps) -> Html {
             label: "Dirt".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::GroundType(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::race_dump_types::GroundType>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::GroundType(v))))
@@ -493,6 +613,7 @@ fn GroundTypeFilter(props: &GroundTypeFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct SeasonFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -519,10 +640,18 @@ fn SeasonFilter(props: &SeasonFilterProps) -> Html {
             label: "Cherry Blossom".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::Season(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::race_dump_types::Season>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::Season(v))))
@@ -535,6 +664,7 @@ fn SeasonFilter(props: &SeasonFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct WeatherFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -565,10 +695,18 @@ fn WeatherFilter(props: &WeatherFilterProps) -> Html {
             label: "Firework".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::Weather(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::race_dump_types::Weather>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::Weather(v))))
@@ -581,6 +719,7 @@ fn WeatherFilter(props: &WeatherFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct GroundConditionFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -603,10 +742,18 @@ fn GroundConditionFilter(props: &GroundConditionFilterProps) -> Html {
             label: "Heavy".into(),
         },
     ];
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::GroundCondition(v) => Some(*v),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<shared::models::GroundCondition>
                 options={options}
+                selected={selected}
                 on_select={{
                     let cb = props.on_pending.clone();
                     Callback::from(move |v| cb.emit(Some(RaceDumpFilter::GroundCondition(v))))
@@ -619,11 +766,20 @@ fn GroundConditionFilter(props: &GroundConditionFilterProps) -> Html {
 #[derive(Properties, Clone, PartialEq)]
 struct CaptureDateFilterProps {
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
 fn CaptureDateFilter(props: &CaptureDateFilterProps) -> Html {
-    let range = use_state(|| DateTimeRange::default());
+    let range0 = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::CaptureDate(r) => Some(r.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let range = use_state(|| range0);
 
     let on_change = {
         let range = range.clone();
@@ -654,6 +810,7 @@ struct CharOrTraineeFilterProps {
     is_char: bool,
     options: Option<RaceDumpFilterOptions>,
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -677,10 +834,19 @@ fn CharOrTraineeFilter(props: &CharOrTraineeFilterProps) -> Html {
         .unwrap_or_default();
     let is_char = props.is_char;
     let cb = props.on_pending.clone();
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match (is_char, f) {
+            (true, RaceDumpFilter::Character(id)) => Some(*id),
+            (false, RaceDumpFilter::Trainee(id)) => Some(*id),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<i64>
                 options={items}
+                selected={selected}
                 on_select={Callback::from(move |id: i64| {
                     cb.emit(Some(if is_char { RaceDumpFilter::Character(id) } else { RaceDumpFilter::Trainee(id) }));
                 })}
@@ -695,6 +861,7 @@ fn CharOrTraineeFilter(props: &CharOrTraineeFilterProps) -> Html {
 struct TagFilterProps {
     options: Option<RaceDumpFilterOptions>,
     on_pending: Callback<Option<RaceDumpFilter>>,
+    initial: Option<RaceDumpFilter>,
 }
 
 #[function_component]
@@ -713,10 +880,18 @@ fn TagFilter(props: &TagFilterProps) -> Html {
         })
         .unwrap_or_default();
     let cb = props.on_pending.clone();
+    let selected = props
+        .initial
+        .as_ref()
+        .and_then(|f| match f {
+            RaceDumpFilter::HasTag(v) => Some(v.clone()),
+            _ => None,
+        });
     html! {
         <div style="margin-top: 8px;">
             <SearchableSelect<String>
                 options={tags}
+                selected={selected}
                 on_select={Callback::from(move |v: String| cb.emit(Some(RaceDumpFilter::HasTag(v))))}
                 placeholder={"Search tag…".to_string()}/>
         </div>
@@ -729,47 +904,49 @@ fn TagFilter(props: &TagFilterProps) -> Html {
 struct FilterEditorProps {
     current: AddingType,
     options: Option<RaceDumpFilterOptions>,
+    initial: Option<RaceDumpFilter>,
     on_pending: Callback<Option<RaceDumpFilter>>,
 }
 
 #[function_component]
 fn FilterEditor(props: &FilterEditorProps) -> Html {
+    let initial = props.initial.clone();
     match props.current {
         AddingType::RaceType => html! {
-            <RaceTypeFilter on_pending={props.on_pending.clone()}/>
+            <RaceTypeFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::DistanceMeters => html! {
-            <DistanceMetersFilter on_pending={props.on_pending.clone()}/>
+            <DistanceMetersFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::Distance => html! {
-            <DistanceFilter on_pending={props.on_pending.clone()}/>
+            <DistanceFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::GroundType => html! {
-            <GroundTypeFilter on_pending={props.on_pending.clone()}/>
+            <GroundTypeFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::Season => html! {
-            <SeasonFilter on_pending={props.on_pending.clone()}/>
+            <SeasonFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::Weather => html! {
-            <WeatherFilter on_pending={props.on_pending.clone()}/>
+            <WeatherFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::GroundCondition => html! {
-            <GroundConditionFilter on_pending={props.on_pending.clone()}/>
+            <GroundConditionFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::Character => html! {
-            <CharOrTraineeFilter is_char={true} options={props.options.clone()} on_pending={props.on_pending.clone()}/>
+            <CharOrTraineeFilter is_char={true} options={props.options.clone()} initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::Trainee => html! {
-            <CharOrTraineeFilter is_char={false} options={props.options.clone()} on_pending={props.on_pending.clone()}/>
+            <CharOrTraineeFilter is_char={false} options={props.options.clone()} initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::VeteranHash => html! {
-            <VeteranHashFilter on_pending={props.on_pending.clone()}/>
+            <VeteranHashFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::HasTag => html! {
-            <TagFilter options={props.options.clone()} on_pending={props.on_pending.clone()}/>
+            <TagFilter options={props.options.clone()} initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::CaptureDate => html! {
-            <CaptureDateFilter on_pending={props.on_pending.clone()}/>
+            <CaptureDateFilter initial={initial.clone()} on_pending={props.on_pending.clone()}/>
         },
         AddingType::None => html! {},
     }

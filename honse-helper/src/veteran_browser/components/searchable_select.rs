@@ -20,6 +20,8 @@ pub struct SearchableSelectProps<T: Clone + PartialEq + 'static> {
     pub value: Option<String>,
     #[prop_or_default]
     pub on_input: Option<Callback<String>>,
+    #[prop_or_default]
+    pub disabled: bool,
 }
 
 #[function_component]
@@ -62,7 +64,11 @@ pub fn SearchableSelect<T: Clone + PartialEq + 'static>(props: &SearchableSelect
         let internal_query = internal_query.clone();
         let is_open = is_open.clone();
         let external_on_input = props.on_input.clone();
+        let disabled = props.disabled;
         Callback::from(move |e: InputEvent| {
+            if disabled {
+                return;
+            }
             if let Some(input) = e.target_dyn_into::<HtmlInputElement>() {
                 let value = input.value();
                 internal_query.set(value.clone());
@@ -76,8 +82,11 @@ pub fn SearchableSelect<T: Clone + PartialEq + 'static>(props: &SearchableSelect
 
     let on_focus = {
         let is_open = is_open.clone();
+        let disabled = props.disabled;
         Callback::from(move |_| {
-            is_open.set(true);
+            if !disabled {
+                is_open.set(true);
+            }
         })
     };
 
@@ -121,20 +130,28 @@ pub fn SearchableSelect<T: Clone + PartialEq + 'static>(props: &SearchableSelect
         props.placeholder.clone()
     };
 
+    let input_style = if props.disabled {
+        "width: 100%; color: #f59e0b; cursor: default;".to_string()
+    } else {
+        "width: 100%;".to_string()
+    };
+
     html! {
         <div style="position: relative; width: 100%;">
             <input
                 ref={input_ref}
                 type="text"
                 class={FilterInputStyle::CLASS_NAME}
-                style="width: 100%;"
+                style={input_style}
                 value={search_query.clone()}
                 placeholder={placeholder}
                 oninput={on_input}
                 onfocus={on_focus}
                 onblur={on_blur}
+                readonly={props.disabled}
+                tabindex={if props.disabled { "-1" } else { "0" }}
             />
-            if *is_open && !filtered_options.is_empty() {
+            if !props.disabled && *is_open && !filtered_options.is_empty() {
                 <div style="
                     position: absolute;
                     top: 100%;

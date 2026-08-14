@@ -124,6 +124,19 @@ fn filter_description(f: &TrainerFilter, options: &TrainerFilterOptions) -> Stri
     }
 }
 
+fn filter_to_adding_type(f: &TrainerFilter) -> Option<(&'static str, AddingType)> {
+    match f {
+        TrainerFilter::NameSearch { .. } => Some(("name", AddingType::Name)),
+        TrainerFilter::Following { .. } => Some(("following", AddingType::Following)),
+        TrainerFilter::VeteranTrainee { .. } => Some(("veteran_trainee", AddingType::VeteranTrainee)),
+        TrainerFilter::VeteranRank { .. } => Some(("veteran_rank", AddingType::VeteranRank)),
+        TrainerFilter::ScType { .. } => Some(("sc_type", AddingType::ScType)),
+        TrainerFilter::ScRarity { .. } => Some(("sc_rarity", AddingType::ScRarity)),
+        TrainerFilter::ScLimitBreak { .. } => Some(("sc_limit_break", AddingType::ScLimitBreak)),
+        TrainerFilter::ScCharacter { .. } => Some(("sc_character", AddingType::ScCharacter)),
+    }
+}
+
 #[function_component]
 pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
     let adding = use_state(|| AddingType::None);
@@ -138,6 +151,7 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
     let add_sc_lb_max = use_state(|| String::new());
     let add_sc_character_ids: UseStateHandle<Vec<i64>> = use_state(Vec::new);
     let add_filter_type: UseStateHandle<String> = use_state(String::new);
+    let editing_idx: UseStateHandle<Option<usize>> = use_state(|| None);
 
     let on_change = props.on_change.clone();
 
@@ -166,6 +180,50 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
         })
     };
 
+    let open_edit = {
+        let filters = props.filters.clone();
+        let adding = adding.clone();
+        let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
+        let reset_all_inputs = reset_all_inputs.clone();
+        let add_name = add_name.clone();
+        let add_following = add_following.clone();
+        let add_veteran_trainee_ids = add_veteran_trainee_ids.clone();
+        let add_veteran_trainee_negate = add_veteran_trainee_negate.clone();
+        let add_veteran_rank = add_veteran_rank.clone();
+        let add_sc_type_ids = add_sc_type_ids.clone();
+        let add_sc_rarity_ids = add_sc_rarity_ids.clone();
+        let add_sc_lb_min = add_sc_lb_min.clone();
+        let add_sc_lb_max = add_sc_lb_max.clone();
+        let add_sc_character_ids = add_sc_character_ids.clone();
+        Callback::from(move |idx: usize| {
+            let Some(f) = filters.get(idx) else { return };
+            let Some((value, t)) = filter_to_adding_type(f) else { return };
+            reset_all_inputs.emit(());
+            adding.set(t);
+            add_filter_type.set(value.to_string());
+            editing_idx.set(Some(idx));
+            match f {
+                TrainerFilter::NameSearch { query } => add_name.set(query.clone()),
+                TrainerFilter::Following { is_following } => add_following.set(*is_following),
+                TrainerFilter::VeteranTrainee { ids, negate } => {
+                    add_veteran_trainee_ids.set(ids.clone());
+                    add_veteran_trainee_negate.set(*negate);
+                }
+                TrainerFilter::VeteranRank { min } => add_veteran_rank.set(min.to_string()),
+                TrainerFilter::ScType { card_types } => add_sc_type_ids.set(card_types.clone()),
+                TrainerFilter::ScRarity { rarities } => add_sc_rarity_ids.set(rarities.clone()),
+                TrainerFilter::ScLimitBreak { min, max } => {
+                    add_sc_lb_min.set(min.to_string());
+                    add_sc_lb_max.set(max.to_string());
+                }
+                TrainerFilter::ScCharacter { character_ids } => {
+                    add_sc_character_ids.set(character_ids.clone());
+                }
+            }
+        })
+    };
+
     let add_filter = {
         let on_change = on_change.clone();
         let adding = adding.clone();
@@ -181,6 +239,7 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
         let add_sc_lb_max = add_sc_lb_max.clone();
         let add_sc_character_ids = add_sc_character_ids.clone();
         let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             let new_filter = match &*adding {
@@ -243,11 +302,19 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
             };
             if let Some(f) = new_filter {
                 let mut updated = filters.clone();
-                updated.push(f);
+                match *editing_idx {
+                    Some(i) if i < updated.len() => {
+                        updated[i] = f;
+                    }
+                    _ => {
+                        updated.push(f);
+                    }
+                }
                 on_change.emit(updated);
             }
             adding.set(AddingType::None);
             add_filter_type.set(String::new());
+            editing_idx.set(None);
             reset_all_inputs.emit(());
         })
     };
@@ -255,10 +322,12 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
     let cancel_adding = {
         let adding = adding.clone();
         let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
         let reset_all_inputs = reset_all_inputs.clone();
         Callback::from(move |_| {
             adding.set(AddingType::None);
             add_filter_type.set(String::new());
+            editing_idx.set(None);
             reset_all_inputs.emit(());
         })
     };
@@ -266,10 +335,16 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
     let remove_filter = {
         let on_change = on_change.clone();
         let filters = props.filters.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |idx: usize| {
             let mut updated = filters.clone();
             updated.remove(idx);
             on_change.emit(updated);
+            match *editing_idx {
+                Some(e) if e == idx => editing_idx.set(None),
+                Some(e) if e > idx => editing_idx.set(Some(e - 1)),
+                _ => {}
+            }
         })
     };
 
@@ -535,7 +610,7 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
                 <div style="margin-top:8px;">
                     {inputs}
                     <div class={FilterActionsStyle::CLASS_NAME} style="margin-top:8px;">
-                        <button disabled={!can_add} onclick={add_filter}>{"Add"}</button>
+                        <button disabled={!can_add} onclick={add_filter}>{(if (*editing_idx).is_some() { "Save" } else { "Add" })}</button>
                         <button class={SecondaryBtnStyle::CLASS_NAME} onclick={cancel_adding}>{"Cancel"}</button>
                     </div>
                 </div>
@@ -565,14 +640,26 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
                 <div style="margin-bottom:12px;">
                     {for props.filters.iter().enumerate().map(|(i, f)| {
                         let desc = filter_description(f, &props.options);
-                        let onclick = {
+                        let remove = {
                             let remove_filter = remove_filter.clone();
                             Callback::from(move |_| remove_filter.emit(i))
                         };
+                        let edit = {
+                            let open_edit = open_edit.clone();
+                            Callback::from(move |_| open_edit.emit(i))
+                        };
+                        let is_editing = matches!(*editing_idx, Some(e) if e == i);
+                        let pill_style = if is_editing {
+                            "border:1px solid #f59e0b;".to_string()
+                        } else {
+                            "border:1px solid #334155;".to_string()
+                        };
                         html! {
-                            <div key={i} class={FilterChipStyle::CLASS_NAME}>
-                                <span style="flex:1;color:#e2e8f0;">{desc}</span>
-                                <button onclick={onclick} class={FilterChipRemoveStyle::CLASS_NAME}>{"\u{00D7}"}</button>
+                            <div key={i} class={FilterChipStyle::CLASS_NAME} style={pill_style}>
+                                <button type="button" onclick={edit} class={FilterChipTextStyle::CLASS_NAME} style="text-align:left;background:none;border:none;cursor:pointer;padding:0;font-size:12px;color:#e2e8f0;">
+                                    {desc}
+                                </button>
+                                <button onclick={remove} class={FilterChipRemoveStyle::CLASS_NAME}>{"\u{00D7}"}</button>
                             </div>
                         }
                     })}
@@ -580,6 +667,11 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
             }
 
             <div class={FilterTitleStyle::CLASS_NAME}>{"Add Filter"}</div>
+            if (*editing_idx).is_some() {
+                <div style="color:#f59e0b;font-size:12px;margin-bottom:6px;">
+                    {"Editing existing filter — click Save to apply changes"}
+                </div>
+            }
             <div class={FilterSectionStyle::CLASS_NAME}>
                 <SearchableSelect<String>
                     options={
@@ -610,6 +702,7 @@ pub fn TrainerFilterPanel(props: &TrainerFilterPanelProps) -> Html {
                         });
                     })}
                     placeholder={"Select type..."}
+                    disabled={(*editing_idx).is_some()}
                 />
             </div>
 
