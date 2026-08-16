@@ -2,11 +2,17 @@ use rusqlite::Connection;
 use shared::{
     models::{PaginationResponse, SupportCardEffectType},
     support_card_browser::{
-        SupportCardBrowserQuery, SupportCardFilter, SupportCardPageItem, SupportCardSortConfig,
+        OwnershipStatus, SupportCardBrowserQuery, SupportCardFilter, SupportCardPageItem,
+        SupportCardSortConfig,
     },
 };
 
 type SqlParam = Box<dyn rusqlite::types::ToSql>;
+
+/// Subquery matching cards available as a borrow from a currently followed trainer.
+const BORROW_AVAILABLE: &str = "EXISTS (SELECT 1 FROM trainer_support_card tsc \
+    JOIN trainers t ON t.trainer_id = tsc.trainer_id \
+    WHERE tsc.support_card_id = scd.id AND t.is_following = 1)";
 
 const BASE_COLS: &str = "\
     scd.id AS support_card_id, \
@@ -40,6 +46,9 @@ fn make_page_item(row: &rusqlite::Row) -> rusqlite::Result<SupportCardPageItem> 
         stock: row.get(9)?,
         character_id: row.get(10)?,
         owned: row.get::<_, i64>(11)? != 0,
+        borrow_available: false,
+        borrow_level: 0,
+        borrow_limit_break_count: 0,
     })
 }
 
@@ -49,12 +58,20 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
 
     for f in filters {
         match f {
-            SupportCardFilter::Owned { owned } => {
-                if *owned {
-                    clauses.push("sco.support_card_id IS NOT NULL".into());
-                } else {
-                    clauses.push("sco.support_card_id IS NULL".into());
-                }
+            SupportCardFilter::Ownership { status } => {
+                let clause = match status {
+                    OwnershipStatus::Accessible => {
+                        format!("(sco.support_card_id IS NOT NULL OR {BORROW_AVAILABLE})")
+                    }
+                    OwnershipStatus::BorrowOnly => {
+                        format!("(sco.support_card_id IS NULL AND {BORROW_AVAILABLE})")
+                    }
+                    OwnershipStatus::Unowned => "(sco.support_card_id IS NULL)".to_string(),
+                    OwnershipStatus::Inaccessible => {
+                        format!("(sco.support_card_id IS NULL AND NOT ({BORROW_AVAILABLE}))")
+                    }
+                };
+                clauses.push(clause);
             }
             SupportCardFilter::NameSearch { search_text } => {
                 if !search_text.is_empty() {
@@ -107,8 +124,9 @@ fn build_filter_where(filters: &[SupportCardFilter]) -> (String, Vec<SqlParam>) 
                         "EXISTS (SELECT 1 FROM support_event_reward ser \
                          JOIN support_event_choice sec ON sec.id = ser.choice_id \
                          JOIN support_event se ON se.story_id = sec.story_id \
+                         JOIN support_event_card sec2 ON sec2.story_id = se.story_id \
                          JOIN skill_data sd ON sd.id = ser.skill_id \
-                         WHERE se.support_card_id = scd.id \
+                         WHERE sec2.support_card_id = scd.id \
                            AND ser.reward_type = 11 AND {}= ? {})",
                         match_col, cat_filter
                     ));
@@ -191,9 +209,56 @@ pub fn query_support_card_page(
     let rows = stmt
         .query_map(param_refs.as_slice(), make_page_item)
         .map_err(|e| format!("data query failed: {e}"))?;
-    let results = rows
+    let mut results = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("data collect failed: {e}"))?;
+
+    // Batch fetch borrow availability from currently followed trainers.
+    // Only cards borrowed by followed (game-gathered) trainers count; trainers added
+    // via uma.moe are never `is_following = 1`.
+    if !results.is_empty() {
+        let ids: Vec<i64> = results.iter().map(|c| c.support_card_id).collect();
+        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+        let borrow_sql = format!(
+            "SELECT tsc.support_card_id, \
+                    MAX(COALESCE(tsc.level, 0)), \
+                    MAX(COALESCE(tsc.limit_break_count, 0)) \
+             FROM trainer_support_card tsc \
+             JOIN trainers t ON t.trainer_id = tsc.trainer_id \
+             WHERE t.is_following = 1 AND tsc.support_card_id IN ({}) \
+             GROUP BY tsc.support_card_id",
+            placeholders.join(",")
+        );
+        let mut borrow_stmt = conn
+            .prepare(&borrow_sql)
+            .map_err(|e| format!("borrow prepare failed: {e}"))?;
+        let id_refs: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let id_params: Vec<&dyn rusqlite::types::ToSql> =
+            id_refs.iter().map(|p| p.as_ref()).collect();
+        let borrow_rows = borrow_stmt
+            .query_map(id_params.as_slice(), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+            })
+            .map_err(|e| format!("borrow query failed: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("borrow collect failed: {e}"))?;
+
+        use std::collections::HashMap;
+        let borrow_map: HashMap<i64, (i64, i64)> = borrow_rows
+            .into_iter()
+            .map(|(id, lvl, lb)| (id, (lvl, lb)))
+            .collect();
+        for c in &mut results {
+            if let Some(&(lvl, lb)) = borrow_map.get(&c.support_card_id) {
+                c.borrow_available = true;
+                c.borrow_level = lvl;
+                c.borrow_limit_break_count = lb;
+            }
+        }
+    }
 
     Ok(PaginationResponse {
         results,

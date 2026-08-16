@@ -111,8 +111,17 @@ pub fn notification_overlay(props: &NotificationOverlayProps) -> Html {
             };
             let id = n.id;
             let on_close = props.on_close.clone();
+            let msg = n.message.clone();
+            let onclick = Callback::from(move |_: MouseEvent| {
+                let text = msg.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.navigator().clipboard().write_text(&text);
+                    }
+                });
+            });
             html! {
-                <div class={classes!(NotificationRootStyle::CLASS_NAME, kind_class)} key={id}>
+                <div class={classes!(NotificationRootStyle::CLASS_NAME, kind_class)} key={id} title="Click to copy" onclick={onclick}>
                     <div class={NotificationBodyStyle::CLASS_NAME}>
                         <span class={NotificationTextStyle::CLASS_NAME}>
                             { &n.message }

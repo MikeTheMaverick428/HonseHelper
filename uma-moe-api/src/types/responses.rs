@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+fn default_i32() -> i32 {
+    0
+}
+
+fn default_i64() -> i64 {
+    0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseNumInfo {
     pub act_num: i32,
@@ -121,9 +129,11 @@ pub struct Inheritance {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupportCard {
     pub account_id: String,
+    #[serde(default = "default_i32")]
     pub support_card_id: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_break_count: Option<i32>,
+    #[serde(default = "default_i32")]
     pub experience: i32,
 }
 
@@ -166,9 +176,12 @@ pub struct Veteran {
     pub trained_chara_id: i32,
     pub card_id: i32,
     pub scenario_id: i32,
+    #[serde(default = "default_i32")]
     pub route_id: i32,
     pub rarity: i32,
+    #[serde(default = "default_i32")]
     pub succession_trained_chara_id_1: i32,
+    #[serde(default = "default_i32")]
     pub succession_trained_chara_id_2: i32,
     pub succession_num: i32,
     pub speed: i32,
@@ -182,6 +195,7 @@ pub struct Veteran {
     pub chara_grade: i32,
     pub talent_level: i32,
     pub running_style: i32,
+    #[serde(default = "default_i32")]
     pub race_cloth_id: i32,
     pub nickname_id: i32,
     pub wins: i32,
@@ -280,7 +294,9 @@ pub struct TrainerInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BorrowStats {
     pub borrow_key: String,
+    #[serde(default = "default_i32")]
     pub copy_count: i32,
+    #[serde(default = "default_i64")]
     pub inheritance_id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_copied_at: Option<String>,

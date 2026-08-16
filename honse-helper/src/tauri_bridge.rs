@@ -1,15 +1,6 @@
 use js_sys::Reflect;
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use web_sys::window;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkerCommand {
-    pub id: Option<u64>,
-    pub command: String,
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
-}
 
 pub fn get_window_label() -> Option<String> {
     let win = window()?;

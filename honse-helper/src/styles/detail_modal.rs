@@ -312,6 +312,19 @@ impl Style for SparkColorRowStyle {
     const CLASS_NAME: &'static str = "spark-color-row";
 }
 
+pub struct SparkWhiteRowStyle;
+
+impl Style for SparkWhiteRowStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            border-top: 1px dashed #334155;
+            padding-top: 10px;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "spark-white-row";
+}
+
 pub struct ParentListStyle;
 
 impl Style for ParentListStyle {

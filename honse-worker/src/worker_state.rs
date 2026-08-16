@@ -3,6 +3,7 @@ use crate::current_view::KnownView;
 use crate::models::user_data::UserData;
 use crate::models::{
     card_data::WorkCardDataModel, piece_data::WorkPieceDataModel, race_team,
+    single_mode_start_friends::SingleModeStartFriendsModel,
     support_card_data::SupportCardDataModel, trained_chara_container::TrainedCharaContainerModel,
     trophy_data::WorkTrophyDataModel, work_friend_data::WorkFriendDataModel,
 };
@@ -309,6 +310,39 @@ impl WorkerState {
             .ok_or_else(|| anyhow!("Process is not connected"))?;
 
         let value = WorkFriendDataModel::read_model_value(inspector, friend_data_ptr)?;
+        Ok(pass_through_value(value))
+    }
+
+    pub fn extract_single_mode_start_friends(&mut self) -> Result<Value> {
+        self.ensure_process()?;
+        self.discover_work_data_manager_instance()?;
+
+        let inspector = self
+            .inspector
+            .as_mut()
+            .ok_or_else(|| anyhow!("Process is not connected"))?;
+
+        let roots: Vec<u64> = [
+            self.scene_manager_ptr,
+            self.work_data_manager_ptr,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        let view_controller_ptr = inspector
+            .find_object_by_class_from_roots(
+                "Gallop",
+                "SingleModeStartViewController",
+                &roots,
+                5,
+                15_000,
+            )?
+            .ok_or_else(|| {
+                anyhow!("Could not discover Gallop::SingleModeStartViewController — are you on the Single Mode character select screen?")
+            })?;
+
+        let value = SingleModeStartFriendsModel::read_model_value(inspector, view_controller_ptr)?;
         Ok(pass_through_value(value))
     }
 

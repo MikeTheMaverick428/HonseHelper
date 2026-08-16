@@ -699,7 +699,6 @@ pub fn RaceDumpBrowser() -> Html {
                 }
                 on_export_done={{
                     let push = push.clone();
-                    let bmo = batch_modal_open.clone();
                     Callback::from(move |result: Result<String, String>| {
                         match result {
                             Ok(msg) if msg == "canceled" => {}

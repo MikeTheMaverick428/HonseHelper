@@ -239,21 +239,66 @@ impl Style for OwnerIdPrefixStyle {
     const CLASS_NAME: &'static str = "owner-id-prefix";
 }
 
+pub struct CardStatsBlockStyle;
+
+impl Style for CardStatsBlockStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin: 6px 0;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "card-stats-block";
+}
+
+/// Column wrapper for stacking the individual stat rows vertically
+pub struct CardStatsListStyle;
+
+impl Style for CardStatsListStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "card-stats-list";
+}
+
+/// Individual stat row (Sparks, Wins, etc.)
 pub struct CardStatsRowStyle;
 
 impl Style for CardStatsRowStyle {
     const CSS: &'static str = r#"
         {{class}} {
             display: flex;
-            gap: 12px;
+            gap: 6px;
             font-size: 12px;
-            margin-bottom: 8px;
+            align-items: center;
         }
     "#;
 
     const CLASS_NAME: &'static str = "card-stats-row";
 }
 
+/// Right-hand side badges column
+pub struct CardBadgesGroupStyle;
+
+impl Style for CardBadgesGroupStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "card-badges-group";
+}
 pub struct StatLabelStyle;
 
 impl Style for StatLabelStyle {
@@ -387,6 +432,20 @@ impl Style for CardFooterRightStyle {
     "#;
 
     const CLASS_NAME: &'static str = "card-footer-right";
+}
+
+pub struct CardFooterLeftStyle;
+
+impl Style for CardFooterLeftStyle {
+    const CSS: &'static str = r#"
+        {{class}} {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    "#;
+
+    const CLASS_NAME: &'static str = "card-footer-left";
 }
 
 pub struct CardFavIconStyle;
@@ -572,6 +631,9 @@ inventory::submit! { StyleDefinition { css: BorrowedBadgeStyle::CSS, selector_ty
 inventory::submit! { StyleDefinition { css: OwnerIdBadgeStyle::CSS, selector_type: OwnerIdBadgeStyle::SELECTOR_TYPE, class_name: OwnerIdBadgeStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: OwnerIdPrefixStyle::CSS, selector_type: OwnerIdPrefixStyle::SELECTOR_TYPE, class_name: OwnerIdPrefixStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardStatsRowStyle::CSS, selector_type: CardStatsRowStyle::SELECTOR_TYPE, class_name: CardStatsRowStyle::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: CardStatsBlockStyle::CSS, selector_type: CardStatsBlockStyle::SELECTOR_TYPE, class_name: CardStatsBlockStyle::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: CardStatsListStyle::CSS, selector_type: CardStatsListStyle::SELECTOR_TYPE, class_name: CardStatsListStyle::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: CardBadgesGroupStyle::CSS, selector_type: CardBadgesGroupStyle::SELECTOR_TYPE, class_name: CardBadgesGroupStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: StatLabelStyle::CSS, selector_type: StatLabelStyle::SELECTOR_TYPE, class_name: StatLabelStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: StatValueStyle::CSS, selector_type: StatValueStyle::SELECTOR_TYPE, class_name: StatValueStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: StatSubStyle::CSS, selector_type: StatSubStyle::SELECTOR_TYPE, class_name: StatSubStyle::CLASS_NAME } }
@@ -580,6 +642,7 @@ inventory::submit! { StyleDefinition { css: CardSparksStyle::CSS, selector_type:
 inventory::submit! { StyleDefinition { css: CardFooterStyle::CSS, selector_type: CardFooterStyle::SELECTOR_TYPE, class_name: CardFooterStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardHashStyle::CSS, selector_type: CardHashStyle::SELECTOR_TYPE, class_name: CardHashStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardFooterRightStyle::CSS, selector_type: CardFooterRightStyle::SELECTOR_TYPE, class_name: CardFooterRightStyle::CLASS_NAME } }
+inventory::submit! { StyleDefinition { css: CardFooterLeftStyle::CSS, selector_type: CardFooterLeftStyle::SELECTOR_TYPE, class_name: CardFooterLeftStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardFavIconStyle::CSS, selector_type: CardFavIconStyle::SELECTOR_TYPE, class_name: CardFavIconStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardTagsStyle::CSS, selector_type: CardTagsStyle::SELECTOR_TYPE, class_name: CardTagsStyle::CLASS_NAME } }
 inventory::submit! { StyleDefinition { css: CardFavMemoStyle::CSS, selector_type: CardFavMemoStyle::SELECTOR_TYPE, class_name: CardFavMemoStyle::CLASS_NAME } }

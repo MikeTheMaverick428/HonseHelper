@@ -10,6 +10,7 @@ pub mod mssgpack_data;
 pub mod process;
 pub mod race_dump_types;
 pub mod support_card_browser;
+pub mod trainer_browser;
 pub mod trainee_browser;
 pub mod veteran_browser;
 pub mod worker_state;

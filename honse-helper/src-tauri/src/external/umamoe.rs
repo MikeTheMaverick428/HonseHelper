@@ -44,11 +44,11 @@ pub fn adapt_inheritance(inheritance: Inheritance, last_updated: &str) -> UmaGro
 
     let hash_min = hash_uma_chara(inheritance.main_parent_id as i64, &veteran_sparks);
 
-    let hash_main = hash_uma_veteran(
+    let hash_main = shared::db_models::veteran_data::hash_rental_veteran(
         inheritance.main_parent_id as i64,
         &veteran_sparks,
-        inheritance.parent_rank,
-        inheritance.parent_rarity,
+        inheritance.parent_rank as i64,
+        inheritance.parent_rarity as i64,
     );
 
     let parent_a_hash = hash_uma_chara(inheritance.parent_left_id as i64, &parent_a_sparks);
@@ -146,26 +146,6 @@ pub fn adapt_inheritance(inheritance: Inheritance, last_updated: &str) -> UmaGro
 
 fn hash_uma_chara(trainee_id: i64, factor_id_array: &[i64]) -> UmaHash {
     shared::db_models::veteran_data::hash_uma_entity(trainee_id, factor_id_array)
-}
-
-fn hash_uma_veteran(
-    trainee_id: i64,
-    factor_id_array: &[i64],
-    rank_score: i32,
-    rank: i32,
-) -> UmaHash {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    trainee_id.hash(&mut hasher);
-
-    let mut sorted_factors = factor_id_array.to_vec();
-    sorted_factors.sort();
-    sorted_factors.hash(&mut hasher);
-
-    rank_score.hash(&mut hasher);
-    rank.hash(&mut hasher);
-
-    let hash = hasher.finish();
-    UmaHash::from(hash)
 }
 
 fn collect_sparks(blue: i32, pink: i32, green: i32, white: &[i32]) -> Vec<i64> {
@@ -321,6 +301,12 @@ fn apply_filter(params: &mut SearchParams, filter: &Filter) -> Result<(), String
             }
             Ok(())
         }
+        Filter::TrainerId(ids) => {
+            if let Some(first) = ids.first() {
+                params.trainer_id = Some(first.to_string());
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -410,5 +396,6 @@ pub fn group_to_veteran_row(
         min_hash: None,
         affinity: affinity_score,
         nickname_id: None,
+        from_followed_trainer: false,
     }
 }

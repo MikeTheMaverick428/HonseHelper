@@ -1,9 +1,11 @@
+use crate::components::copyable::OwnerBadge;
+use crate::components::parse_variant_name;
 use crate::styles::detail_modal::*;
 use crate::styles::skill_pill::*;
 use crate::styles::support_card_browser::*;
 use crate::styles::Style;
 use crate::support_card_browser::components::support_card_card::{
-    parse_card_name, rarity_class, rarity_label, type_class, type_label,
+    rarity_class, rarity_label, type_class, type_label,
 };
 use crate::tauri_bridge::invoke_tauri_command;
 use crate::veteran_browser::components::skill_detail_modal::SkillDetailModal;
@@ -11,9 +13,9 @@ use crate::veteran_browser::components::skill_pill::SkillPill;
 use shared::{
     models::SupportCardRarity,
     support_card_browser::{
-        SupportCardDetail, SupportCardEventBranch, SupportCardEventChoiceDetail,
-        SupportCardEventDetail, SupportCardEventRewardDetail, SupportCardPageItem,
-        SupportCardSkillDetail,
+        SupportCardBorrowRow, SupportCardDetail, SupportCardEventBranch,
+        SupportCardEventChoiceDetail, SupportCardEventDetail, SupportCardEventRewardDetail,
+        SupportCardPageItem, SupportCardSkillDetail,
     },
     SupportCardEffectRow, SupportCardUniqueEffectDetail,
 };
@@ -23,6 +25,10 @@ use yew::prelude::*;
 pub struct SupportCardDetailModalProps {
     pub card: SupportCardPageItem,
     pub on_close: Callback<()>,
+    /// When set, the card is shown as a borrowed card using the level / limit
+    /// break count carried by `card` (instead of the owning user's collection).
+    #[prop_or(false)]
+    pub borrow: bool,
 }
 
 #[function_component]
@@ -33,6 +39,8 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
     let events = use_state(Vec::new);
     let loading = use_state(|| true);
     let load_error = use_state(|| None::<String>);
+    let borrows = use_state(Vec::<SupportCardBorrowRow>::new);
+    let borrows_loading = use_state(|| false);
     let active_tab = use_state(|| 0usize);
     let selected_skill = use_state(|| None::<(i64, i64)>);
 
@@ -44,6 +52,9 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
         let loading = loading.clone();
         let load_error = load_error.clone();
         let card_id = props.card.support_card_id;
+        let owned = props.card.owned;
+        let borrows = borrows.clone();
+        let borrows_loading = borrows_loading.clone();
         use_effect_with((), move |_| {
             let card_id = card_id;
             wasm_bindgen_futures::spawn_local(async move {
@@ -70,6 +81,25 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                 }
                 loading.set(false);
             });
+            if !owned {
+                wasm_bindgen_futures::spawn_local(async move {
+                    borrows_loading.set(true);
+                    match invoke_tauri_command(
+                        "get_support_card_borrows",
+                        serde_json::json!({ "supportCardId": card_id }),
+                    )
+                    .await
+                    {
+                        Ok(val) => {
+                            if let Ok(rows) = serde_json::from_value::<Vec<SupportCardBorrowRow>>(val) {
+                                borrows.set(rows);
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    borrows_loading.set(false);
+                });
+            }
             || ()
         });
     }
@@ -79,7 +109,12 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
         Callback::from(move |_| cb.emit(()))
     };
 
-    let tab_labels = ["Overview", "Effects", "Skills", "Events"];
+    let show_borrows_tab = !props.card.owned && props.card.borrow_available;
+    let tab_labels: Vec<&str> = if show_borrows_tab {
+        vec!["Overview", "Effects", "Skills", "Events", "Borrows"]
+    } else {
+        vec!["Overview", "Effects", "Skills", "Events"]
+    };
 
     let on_tab = {
         let active_tab = active_tab.clone();
@@ -87,7 +122,7 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
     };
 
     let card = &props.card;
-    let (variant_label, character_name) = parse_card_name(&card.name);
+    let (variant_label, character_name) = parse_variant_name(&card.name);
 
     let on_skill_click = {
         let selected_skill = selected_skill.clone();
@@ -140,13 +175,15 @@ pub fn SupportCardDetailModal(props: &SupportCardDetailModalProps) -> Html {
                             {err}
                         </div>
                     } else if *active_tab == 0 {
-                        {render_overview(card, &*effects, &*unique_effect)}
+                        {render_overview(card, &*effects, &*unique_effect, props.borrow)}
                     } else if *active_tab == 1 {
                         {render_effects(&effects, props.card.rarity)}
                     } else if *active_tab == 2 {
                         {render_skills(&skill_hints, on_skill_click.clone())}
                     } else if *active_tab == 3 {
                         {render_events(&events)}
+                    } else if *active_tab == 4 && show_borrows_tab {
+                        {render_borrows(&*borrows, *borrows_loading)}
                     }
                 </div>
             </div>
@@ -173,6 +210,7 @@ fn render_overview(
     card: &SupportCardPageItem,
     effects: &[SupportCardEffectRow],
     unique: &Option<SupportCardUniqueEffectDetail>,
+    borrow: bool,
 ) -> Html {
     let type_cls = type_class(card.card_type);
     let rarity_cls = rarity_class(card.rarity);
@@ -193,7 +231,7 @@ fn render_overview(
                 <span class={format!("{} {}", SupportCardTypeStyle::CLASS_NAME, type_cls)}>
                     {type_label(card.card_type)}
                 </span>
-                if card.owned {
+                if card.owned || borrow {
                     <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
                         {(0..4).map(|i| {
                             let on = i < card.limit_break_count as usize;
@@ -203,11 +241,16 @@ fn render_overview(
                     <span style="color: #9ca3af; font-size: 13px;">
                         {format!("Lv{}/{}", lv, card.max_level)}
                     </span>
+                    if borrow {
+                        <span style="color:#93c5fd;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid #3b82f666;border-radius:999px;background:#1e3a5f55;">
+                            {"Borrow"}
+                        </span>
+                    }
                 } else {
                     <span style="color: #ef4444; font-size: 13px; font-weight: 600;">{"Not Owned"}</span>
                 }
             </div>
-            if card.owned {
+            if card.owned && (card.exp > 0 || card.stock > 0 || card.favorite_flag) {
                 <div style="display: flex; gap: 16px; font-size: 13px; color: #94a3b8; margin-bottom: 20px;">
                     <span>{"EXP: "}<span style="color: #e2e8f0;">{card.exp}</span></span>
                     { if card.favorite_flag { html! { <span>{"\u{2605}"}{" Favorite"}</span> } } else { html! {} } }
@@ -215,7 +258,7 @@ fn render_overview(
                 </div>
             }
 
-            {render_unique_section(unique, card.level, card.owned)}
+            {render_unique_section(unique, card.level, card.owned || borrow)}
 
             if !current_effects.is_empty() {
                 <div style="margin-bottom: 20px;">
@@ -235,7 +278,7 @@ fn render_overview(
     }
 }
 
-fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64, owned: bool) -> Html {
+fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_level: i64, show_stats: bool) -> Html {
     match unique {
         None => html! {
             <div class={UniqueSectionStyle::CLASS_NAME}>
@@ -244,7 +287,7 @@ fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_le
             </div>
         },
         Some(ue) => {
-            let meets_level = owned && card_level >= ue.limit_break_level;
+            let meets_level = show_stats && card_level >= ue.limit_break_level;
             html! {
                 <div class={UniqueSectionStyle::CLASS_NAME}>
                     <h3 class={UniqueSectionTitleStyle::CLASS_NAME}>{"Unique Effect"}</h3>
@@ -270,6 +313,52 @@ fn render_unique_section(unique: &Option<SupportCardUniqueEffectDetail>, card_le
                 </div>
             }
         }
+    }
+}
+
+fn render_borrows(borrows: &[SupportCardBorrowRow], loading: bool) -> Html {
+    if loading {
+        return html! {
+            <div class={DetailTabStyle::CLASS_NAME}>
+                <div style="color: #64748b;">{"Loading available borrows..."}</div>
+            </div>
+        };
+    }
+    if borrows.is_empty() {
+        return html! {
+            <div class={DetailTabStyle::CLASS_NAME}>
+                <div style="color: #64748b;">
+                    {"No currently followed trainer has this card set as their borrow."}
+                </div>
+            </div>
+        };
+    }
+
+    html! {
+        <div class={DetailTabStyle::CLASS_NAME}>
+            <div style="margin-bottom: 8px; font-size: 0.9em; color: #94a3b8;">
+                {"Available from "}{borrows.len()}{" followed trainer(s), best first"}
+            </div>
+            {for borrows.iter().map(|b| {
+                let lb = b.limit_break_count;
+                let is_mlb = lb >= 4;
+                html! {
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;margin-bottom:6px;">
+                        <span style="flex:1;font-weight:600;color:#e2e8f0;">{ &b.name }</span>
+                        <OwnerBadge owner_id={b.trainer_id as u64} label={"Trainer".to_string()} title="Click to copy trainer ID" />
+                        <span style="color:#9ca3af;font-size:12px;">{format!("Lv{}", b.level)}</span>
+                        <span class={format!("{}{}", SupportCardLbStyle::CLASS_NAME, if is_mlb { " mlb" } else { "" })}>
+                            {(0..4).map(|i| {
+                                let on = i < lb;
+                                html! {
+                                    <span class={format!("diamond{}", if on { " on" } else { "" })}></span>
+                                }
+                            }).collect::<Html>()}
+                        </span>
+                    </div>
+                }
+            })}
+        </div>
     }
 }
 
@@ -500,10 +589,46 @@ fn render_choice(c: &SupportCardEventChoiceDetail) -> Html {
     }
 }
 
+fn category_badge(cat: &str) -> (String, &'static str) {
+    let (label, color) = match cat {
+        "arrows" => ("Chain", "#60a5fa"),
+        "random" => ("Random", "#a78bfa"),
+        "special" => ("Special", "#34d399"),
+        "dates" | "dates_random" => ("Dates", "#f472b6"),
+        _ => (cat, "#94a3b8"),
+    };
+    (label.to_string(), color)
+}
+
+fn category_group(cat: &str) -> &str {
+    match cat {
+        "dates" | "dates_random" => "dates",
+        other => other,
+    }
+}
+
+fn category_order(key: &str) -> usize {
+    match key {
+        "arrows" => 0,
+        "random" => 1,
+        "special" => 2,
+        "dates" => 3,
+        _ => 4,
+    }
+}
+
+fn section_title(key: &str) -> String {
+    match key {
+        "arrows" => "Chain Events".to_string(),
+        "random" => "Random Events".to_string(),
+        "special" => "Special Events".to_string(),
+        "dates" => "Dates".to_string(),
+        other => other.to_string(),
+    }
+}
+
 fn render_event_card(e: &SupportCardEventDetail) -> Html {
-    let is_chain = e.category == "arrows";
-    let kind = if is_chain { "Chain" } else { "Random" };
-    let kind_color = if is_chain { "#60a5fa" } else { "#a78bfa" };
+    let (kind, kind_color) = category_badge(&e.category);
     html! {
         <div style="margin-bottom: 12px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;">
             <div style="display: flex; align-items: center; margin-bottom: 8px;">
@@ -526,10 +651,38 @@ fn render_events(events: &[SupportCardEventDetail]) -> Html {
         };
     }
 
+    let mut order: Vec<&str> = Vec::new();
+    let mut groups: std::collections::HashMap<&str, Vec<&SupportCardEventDetail>> =
+        std::collections::HashMap::new();
+    for e in events {
+        let key = category_group(&e.category);
+        if !groups.contains_key(key) {
+            order.push(key);
+        }
+        groups.entry(key).or_default().push(e);
+    }
+    order.sort_by_key(|k| category_order(k));
+
     html! {
         <div class={DetailTabStyle::CLASS_NAME}>
             <div class={SupportCardListStyle::CLASS_NAME}>
-                {for events.iter().map(|e| render_event_card(e))}
+                {for order.iter().map(|key| {
+                    let (_, color) = category_badge(key);
+                    html! {
+                        <div style="margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <span style={format!("font-size: 0.85em; font-weight: 600; color: {};", color)}>
+                                    {section_title(key)}
+                                </span>
+                                <span style="font-size: 0.75em; color: #64748b;">
+                                    {groups.get(key).unwrap().len()}
+                                </span>
+                                <span style="flex: 1; height: 1px; background: #1e293b;"></span>
+                            </div>
+                            {for groups.get(key).unwrap().iter().map(|e| render_event_card(e))}
+                        </div>
+                    }
+                })}
             </div>
         </div>
     }

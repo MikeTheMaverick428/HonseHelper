@@ -141,7 +141,6 @@ pub fn VeteranBrowser() -> Html {
 
     // ── Reusable query runner ───────────────────────────────────
     // Takes explicit values (not state) so timing is never an issue.
-    let pn = push.clone();
     let run_query: Rc<
         dyn Fn(
             Vec<Filter>,
@@ -796,6 +795,13 @@ pub fn VeteranBrowser() -> Html {
                         }
                     }
                 }
+                Filter::WhiteSparkMatch(wsf) => {
+                    for gid in &wsf.group_ids {
+                        if !ids.contains(gid) {
+                            ids.push(*gid);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -947,7 +953,7 @@ pub fn VeteranBrowser() -> Html {
                                     } else {
                                         None
                                     };
-                                    let on_delete = if !v.veteran.owned && matches!(*mode, BrowserMode::Browse) {
+                                    let on_delete = if !api_mode && !v.veteran.owned && !v.veteran.from_followed_trainer && matches!(*mode, BrowserMode::Browse) {
                                         Some(on_delete.clone())
                                     } else {
                                         None

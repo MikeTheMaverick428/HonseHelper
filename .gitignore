@@ -1,6 +1,7 @@
 .opencode
 .vscode
 .VSCodeCounter
+.changelogs
 dist
 target
 .env

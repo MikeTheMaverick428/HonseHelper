@@ -38,9 +38,9 @@ pub struct SparkAptStyle;
 impl Style for SparkAptStyle {
     const CSS: &'static str = r#"
         {{class}} {
-            background: #14402a;
-            color: #6ee7b7;
-            border-color: #059669aa;
+            background: #4a1d3a;
+            color: #f9a8d4;
+            border-color: #ec489944;
         }
     "#;
 
@@ -52,9 +52,9 @@ pub struct SparkUniqueStyle;
 impl Style for SparkUniqueStyle {
     const CSS: &'static str = r#"
         {{class}} {
-            background: #3b1f5e;
-            color: #c4b5fd;
-            border-color: #7c3aed44;
+            background: #14402a;
+            color: #6ee7b7;
+            border-color: #059669aa;
         }
     "#;
 

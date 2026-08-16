@@ -20,6 +20,8 @@ pub mod support_card_browser;
 pub mod support_card_data;
 pub mod tags;
 pub mod trainee_browser;
+pub mod trainer_browser;
+pub mod trainers;
 pub mod trophy_data;
 pub mod veteran_browser;
 pub mod veterans;

@@ -15,6 +15,7 @@ The view comprises:
 - side panel with the active filters indicators and new filter forms
     - select filter type from the list (begin typing to find the correct type easily)
     - after selecting the type, the concrete filter form is shown
+    - click an active filter indicator to reopen it in the form for editing
 - main panel containing veteran cards with basic info
     - veteran cards are clickable, opening the details modal
 
@@ -111,7 +112,7 @@ Tags are internal to the app and can be used in veteran browser filters.
 
 ## Filtering
 
-The veteran browser provides a side panel for building complex filter queries. Select a filter type from the list (begin typing to find the correct type quickly). Active filters are shown as removable indicators above the filter form.
+The veteran browser provides a side panel for building complex filter queries. Select a filter type from the list (begin typing to find the correct type quickly). Active filters are shown as indicators above the filter form. Click an indicator to reopen that filter in the form, pre-filled with its current values, for editing — the *Add* button turns into *Save* and replaces the filter in place. Use the × button to remove a filter.
 
 If filter can intake multiple values and multiple values are provided, at least one of the
 values must match. If you want to match all values, use multiple filters of the same type.
@@ -156,6 +157,27 @@ For white sparks you can also filter for 'at least one' of white spark groups by
 multiple values.
 
 There is also a filter for white spark count.
+
+### White Spark Match
+
+The White Spark Match filter combines filtering with sorting. Select one or more white spark
+groups and optionally constrain them by the same options as the regular white spark filter
+(star count, on trainee, min shared umas). Veterans that have **at least one** of the selected
+white spark groups are shown.
+
+Additionally you can require a **minimum number of matched groups** (e.g. at least 2 of the
+selected groups must be present on the veteran).
+
+The filter also overrides the default sorting for the matching results with three configurable
+criteria, ordered by priority (top = most important, reorder with the arrows):
+
+- **Matched skills** — number of selected white spark groups present on the veteran
+- **Shared umas** — total number of trainees in the legacy tree sharing those sparks
+- **Total stars** — total spark stars accumulated on the selected groups
+
+Only one White Spark Match filter can be active at a time — adding a new one replaces the
+previous. The filter works in database mode only (not in API mode). Matched white sparks are
+highlighted on veteran cards and in the details modal, same as for the regular white spark filter.
 
 ### Major Wins filters
 

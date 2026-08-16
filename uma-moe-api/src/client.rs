@@ -268,7 +268,11 @@ impl UmaMoeClient {
         Ok(response.json().await?)
     }
 
-    pub async fn get_profile(&self, account_id: &str) -> Result<ProfileResponse, ApiError> {
+    pub async fn get_profile(
+        &self,
+        account_id: &str,
+        request: Option<&crate::types::requests::ProfileRequest>,
+    ) -> Result<ProfileResponse, ApiError> {
         let url = format!("{}/api/v4/user/profile/{}", self.base_url, account_id);
 
         let response = self
@@ -291,7 +295,30 @@ impl UmaMoeClient {
             });
         }
 
-        Ok(response.json().await?)
+        let body_text = response.text().await.map_err(ApiError::Reqwest)?;
+        let mut value: serde_json::Value =
+            serde_json::from_str(&body_text).map_err(ApiError::Serde)?;
+        if let Some(obj) = value.as_object_mut() {
+            if let Some(req) = request {
+                for field in &req.exclude {
+                    let key = serde_json::to_value(field)
+                        .unwrap_or_default()
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    if !key.is_empty() {
+                        obj.remove(&key);
+                    }
+                }
+            }
+        }
+        let parsed: ProfileResponse = serde_json::from_value(value).map_err(|e| {
+            eprintln!("[uma-moe] profile deserialize error for {account_id}: {e}");
+            let preview = if body_text.len() > 2000 { &body_text[..2000] } else { &body_text };
+            eprintln!("[uma-moe] response body preview: {preview}");
+            e
+        })?;
+        Ok(parsed)
     }
 
     pub async fn count(&self, params: SearchParams) -> Result<String, ApiError> {

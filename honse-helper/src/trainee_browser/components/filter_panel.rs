@@ -122,6 +122,17 @@ fn adding_type_to_key(t: &AddingType) -> Option<String> {
     .map(String::from)
 }
 
+fn filter_to_adding_type(f: &TraineeFilter) -> Option<(&'static str, AddingType)> {
+    match f {
+        TraineeFilter::Owned { .. } => Some(("ownership", AddingType::Ownership)),
+        TraineeFilter::GrowthBonus { .. } => Some(("growth", AddingType::GrowthBonus)),
+        TraineeFilter::MinAptitude { .. } => Some(("min_apt", AddingType::MinAptitude)),
+        TraineeFilter::MaxAAptitudes { .. } => Some(("max_a", AddingType::MaxAAptitudes)),
+        TraineeFilter::Character { .. } => Some(("character", AddingType::Character)),
+        TraineeFilter::HasSkill { .. } => Some(("has_skill", AddingType::HasSkill)),
+    }
+}
+
 fn id_name_options(items: &[(i64, String)]) -> Vec<SelectOption<i64>> {
     items
         .iter()
@@ -154,6 +165,8 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
     let add_skill_event = use_state(|| true);
     let add_skill_secret = use_state(|| true);
 
+    let editing_idx: UseStateHandle<Option<usize>> = use_state(|| None);
+
     let make_gb_pending = {
         let gb_stat = gb_stat.clone();
         let gb_min = gb_min.clone();
@@ -179,10 +192,81 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
     let remove_filter = {
         let filters = props.filters.clone();
         let on_change = props.on_change.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |idx: usize| {
             let mut nf = filters.clone();
             nf.remove(idx);
             on_change.emit(nf);
+            match *editing_idx {
+                Some(e) if e == idx => editing_idx.set(None),
+                Some(e) if e > idx => editing_idx.set(Some(e - 1)),
+                _ => {}
+            }
+        })
+    };
+
+    let open_edit = {
+        let filters = props.filters.clone();
+        let adding = adding.clone();
+        let pending = pending.clone();
+        let editing_idx = editing_idx.clone();
+        let gb_stat = gb_stat.clone();
+        let gb_min = gb_min.clone();
+        let ma_cat = ma_cat.clone();
+        let ma_level = ma_level.clone();
+        let max_a_count = max_a_count.clone();
+        let own_val = own_val.clone();
+        let char_id = char_id.clone();
+        let add_skill_id = add_skill_id.clone();
+        let add_skill_innate = add_skill_innate.clone();
+        let add_skill_event = add_skill_event.clone();
+        let add_skill_secret = add_skill_secret.clone();
+        Callback::from(move |idx: usize| {
+            let Some(f) = filters.get(idx) else { return };
+            let Some((_, t)) = filter_to_adding_type(f) else { return };
+            gb_stat.set("speed".to_string());
+            gb_min.set(String::new());
+            ma_cat.set("turf".to_string());
+            ma_level.set(7);
+            max_a_count.set(String::new());
+            own_val.set(true);
+            char_id.set(None);
+            add_skill_id.set(None);
+            add_skill_innate.set(true);
+            add_skill_event.set(true);
+            add_skill_secret.set(true);
+            adding.set(t);
+            pending.set(Some(f.clone()));
+            editing_idx.set(Some(idx));
+            match f {
+                TraineeFilter::Owned { owned } => own_val.set(*owned),
+                TraineeFilter::GrowthBonus { stat, min_value } => {
+                    gb_stat.set(stat.value().to_string());
+                    gb_min.set(min_value.map(|v| v.to_string()).unwrap_or_default());
+                }
+                TraineeFilter::MinAptitude {
+                    category,
+                    min_level,
+                } => {
+                    ma_cat.set(category.value().to_string());
+                    ma_level.set(*min_level);
+                }
+                TraineeFilter::MaxAAptitudes { max_count } => {
+                    max_a_count.set(max_count.to_string());
+                }
+                TraineeFilter::Character { character_id } => char_id.set(Some(*character_id)),
+                TraineeFilter::HasSkill {
+                    group_id,
+                    exact_skill_id,
+                    sources,
+                } => {
+                    let val = exact_skill_id.map(|id| -id).unwrap_or(*group_id);
+                    add_skill_id.set(Some(val));
+                    add_skill_innate.set(sources.innate);
+                    add_skill_event.set(sources.event);
+                    add_skill_secret.set(sources.secret);
+                }
+            }
         })
     };
 
@@ -227,6 +311,7 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
         let on_change = props.on_change.clone();
         let filters = props.filters.clone();
         let pending = pending.clone();
+        let editing_idx = editing_idx.clone();
         let add_skill_id = add_skill_id.clone();
         let add_skill_innate = add_skill_innate.clone();
         let add_skill_event = add_skill_event.clone();
@@ -274,20 +359,30 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
             };
             if let Some(f) = new_filter {
                 let mut nf = filters.clone();
-                nf.push(f);
+                match *editing_idx {
+                    Some(i) if i < nf.len() => {
+                        nf[i] = f;
+                    }
+                    _ => {
+                        nf.push(f);
+                    }
+                }
                 on_change.emit(nf);
             }
             adding.set(AddingType::None);
             pending.set(None);
+            editing_idx.set(None);
         })
     };
 
     let on_cancel = {
         let adding = adding.clone();
         let pending = pending.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |_: MouseEvent| {
             adding.set(AddingType::None);
             pending.set(None);
+            editing_idx.set(None);
         })
     };
 
@@ -576,19 +671,35 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
             {props.filters.iter().enumerate().map(|(idx, f)| {
                 let label = filter_label(f, props.options.as_ref());
                 let remove = remove_filter.clone();
-                let onclick = Callback::from(move |_| remove.emit(idx));
+                let remove_click = Callback::from(move |_| remove.emit(idx));
+                let edit = {
+                    let open_edit = open_edit.clone();
+                    Callback::from(move |_| open_edit.emit(idx))
+                };
+                let is_editing = matches!(*editing_idx, Some(e) if e == idx);
+                let pill_style = if is_editing {
+                    "border:1px solid #f59e0b;".to_string()
+                } else {
+                    "border:1px solid #334155;".to_string()
+                };
                 html! {
-                    <div class={FilterChipStyle::CLASS_NAME}>
-                        <span class={FilterChipTextStyle::CLASS_NAME}>{label}</span>
-                        <button class={FilterChipRemoveStyle::CLASS_NAME} onclick={onclick}>{"✕"}</button>
+                    <div class={FilterChipStyle::CLASS_NAME} style={pill_style}>
+                        <button type="button" onclick={edit} class={FilterChipTextStyle::CLASS_NAME} style="text-align:left;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">
+                            {label}
+                        </button>
+                        <button class={FilterChipRemoveStyle::CLASS_NAME} onclick={remove_click}>{"✕"}</button>
                     </div>
                 }
             }).collect::<Html>()}
 
             <div style="margin-top: 12px; border-top: 1px solid #1f2937; padding-top: 12px;">
+                {if (*editing_idx).is_some() {
+                    html! { <div style="color:#f59e0b;font-size:12px;margin-bottom:6px;">{"Editing existing filter — click Save to apply changes"}</div> }
+                } else { html! {} }}
                 <FilterTypePicker
                     selected={adding_type_to_key(&(*adding))}
                     on_select={on_type_select}
+                    disabled={(*editing_idx).is_some()}
                 />
             </div>
 
@@ -602,7 +713,7 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
                         }}
                         onclick={on_add_clicked}
                     >
-                        {"Add"}
+                        {if (*editing_idx).is_some() { "Save" } else { "Add" }}
                     </button>
                     <button class={SecondaryBtnStyle::CLASS_NAME} onclick={on_cancel}>
                         {"Cancel"}
@@ -619,6 +730,8 @@ pub fn TrFilterPanel(props: &TrFilterPanelProps) -> Html {
 struct FilterTypePickerProps {
     selected: Option<String>,
     on_select: Callback<AddingType>,
+    #[prop_or_default]
+    disabled: bool,
 }
 
 #[function_component]
@@ -672,6 +785,7 @@ fn FilterTypePicker(props: &FilterTypePickerProps) -> Html {
             selected={props.selected.clone()}
             on_select={on_select}
             placeholder={"Add Filter…".to_string()}
+            disabled={props.disabled}
         />
     }
 }

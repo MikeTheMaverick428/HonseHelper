@@ -18,6 +18,33 @@ fn color_class(spark_type: i64) -> &'static str {
     }
 }
 
+/// Splits spark rows into color groups. Blue/pink/green rows are color-distinguished
+/// already; white sparks are split into separate Skill / Race / Scenario / Event rows
+/// so they can be visually separated (second field = white sub-section). Empty groups
+/// are skipped.
+pub fn spark_group_rows(sparks: &[SparkGroupRow]) -> Vec<(bool, Vec<SparkGroupRow>)> {
+    let mut rows = Vec::new();
+    for (is_white, ty) in [
+        (false, 1i64),
+        (false, 2),
+        (false, 3),
+        (true, 4),
+        (true, 5),
+        (true, 6),
+        (true, 7),
+    ] {
+        let items: Vec<SparkGroupRow> = sparks
+            .iter()
+            .filter(|s| s.spark_type == ty)
+            .cloned()
+            .collect();
+        if !items.is_empty() {
+            rows.push((is_white, items));
+        }
+    }
+    rows
+}
+
 #[function_component]
 pub fn SparkItem(props: &SparkItemProps) -> Html {
     let s = &props.spark;

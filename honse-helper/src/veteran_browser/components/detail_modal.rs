@@ -1,16 +1,11 @@
-use crate::styles::{
-    detail_modal::*,
-    skill_pill::*,
-    tag_modal::{TagPillListStyle, TagPillRemoveStyle, TagPillStyle},
-    veteran_card::{
+use crate::{components::parse_variant_name, styles::{
+    Style, detail_modal::*, skill_pill::*, tag_modal::{TagPillListStyle, TagPillRemoveStyle, TagPillStyle}, veteran_card::{
         CardFooterStyle, CardHashStyle, CardHeaderStyle, CardMetaStyle, CardNameStyle,
         CardRankStyle, CardSparksStyle, CardStatsRowStyle, IndepTrainBadgeStyle,
         OwnerIdBadgeStyle, OwnerIdPrefixStyle, StatLabelStyle, StatValueStyle,
         VeteranVariantStyle,
     },
-    Style,
-};
-use crate::support_card_browser::components::support_card_card::parse_card_name;
+}};
 use crate::veteran_browser::components::skill_detail_modal::SkillDetailModal;
 use crate::veteran_browser::components::skill_pill::SkillPill;
 use shared::models::{INDEPENDENT_LEARNER_NICKNAME, UmaRank};
@@ -25,8 +20,7 @@ use crate::tauri_bridge::invoke_tauri_command;
 use serde_json::json;
 
 use super::rank_badge::RankBadge;
-use super::spark_item::SparkItem;
-use super::veteran_card::parse_veteran_name;
+use super::spark_item::{spark_group_rows, SparkItem};
 use crate::components::wins_list::WinsList;
 
 #[derive(Properties, PartialEq)]
@@ -137,29 +131,7 @@ fn render_parent_detail(
         return html! {};
     };
     let pname = sp.trainee_name.as_deref().unwrap_or("Unknown").to_string();
-    let parent_spark_groups: Vec<Vec<SparkGroupRow>> = {
-        let blue = parent_sparks
-            .iter()
-            .filter(|s| s.spark_type == 1)
-            .cloned()
-            .collect::<Vec<_>>();
-        let pink = parent_sparks
-            .iter()
-            .filter(|s| s.spark_type == 2)
-            .cloned()
-            .collect::<Vec<_>>();
-        let green = parent_sparks
-            .iter()
-            .filter(|s| s.spark_type == 3)
-            .cloned()
-            .collect::<Vec<_>>();
-        let other = parent_sparks
-            .iter()
-            .filter(|s| s.spark_type != 1 && s.spark_type != 2 && s.spark_type != 3)
-            .cloned()
-            .collect::<Vec<_>>();
-        vec![blue, pink, green, other]
-    };
+    let parent_spark_groups: Vec<(bool, Vec<SparkGroupRow>)> = spark_group_rows(parent_sparks);
     let mut sorted_parent_wins = parent_wins.to_vec();
     sorted_parent_wins.sort_by(|a, b| a.priority.cmp(&b.priority));
 
@@ -188,9 +160,9 @@ fn render_parent_detail(
                         } else {
                             <h3>{"Sparks"}</h3>
                             <div class={SparkDetailListStyle::CLASS_NAME}>
-                                { for parent_spark_groups.iter().filter(|g| !g.is_empty()).map(|group| {
+                                { for parent_spark_groups.iter().filter(|(_, g)| !g.is_empty()).map(|(is_white, group)| {
                                     html! {
-                                        <div class={SparkColorRowStyle::CLASS_NAME}>
+                                        <div class={classes!(SparkColorRowStyle::CLASS_NAME, is_white.then_some(SparkWhiteRowStyle::CLASS_NAME))}>
                                             { for group.iter().map(|s| html! { <SparkItem spark={s.clone()} /> }) }
                                         </div>
                                     }
@@ -508,7 +480,7 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
         return html! { <div class={ModalOverlayStyle::CLASS_NAME}><div class={ModalContentStyle::CLASS_NAME}><p>{"Loading..."}</p></div></div> };
     };
 
-    let (variant, character_name) = v.trainee_name.as_deref().map(parse_veteran_name).unwrap_or((None, "Unknown"));
+    let (variant, character_name) = v.trainee_name.as_deref().map(parse_variant_name).unwrap_or((None, "Unknown"));
 
     let has_any_stat = v.stat_speed.is_some()
         || v.stat_stamina.is_some()
@@ -561,33 +533,7 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
             .then(a.name.cmp(&b.name))
     });
 
-    let spark_groups: Vec<Vec<SparkGroupRow>> = {
-        let blue = props
-            .sparks
-            .iter()
-            .filter(|s| s.spark_type == 1)
-            .cloned()
-            .collect::<Vec<_>>();
-        let pink = props
-            .sparks
-            .iter()
-            .filter(|s| s.spark_type == 2)
-            .cloned()
-            .collect::<Vec<_>>();
-        let green = props
-            .sparks
-            .iter()
-            .filter(|s| s.spark_type == 3)
-            .cloned()
-            .collect::<Vec<_>>();
-        let white = props
-            .sparks
-            .iter()
-            .filter(|s| s.spark_type != 1 && s.spark_type != 2 && s.spark_type != 3)
-            .cloned()
-            .collect::<Vec<_>>();
-        vec![blue, pink, green, white]
-    };
+    let spark_groups: Vec<(bool, Vec<SparkGroupRow>)> = spark_group_rows(&props.sparks);
 
     html! {
         <div class={ModalOverlayStyle::CLASS_NAME} onclick={on_close.clone()}>
@@ -818,9 +764,9 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
                                     <p>{"No spark data."}</p>
                                 } else {
                                     <div class={SparkDetailListStyle::CLASS_NAME}>
-                                        { for spark_groups.iter().filter(|g| !g.is_empty()).map(|group| {
+                                        { for spark_groups.iter().filter(|(_, g)| !g.is_empty()).map(|(is_white, group)| {
                                             html! {
-                                                <div class={SparkColorRowStyle::CLASS_NAME}>
+                                                <div class={classes!(SparkColorRowStyle::CLASS_NAME, is_white.then_some(SparkWhiteRowStyle::CLASS_NAME))}>
                                                     { for group.iter().map(|s| {
                                                         let highlighted = props.active_spark_group_ids.contains(&s.spark_group_id);
                                                         html! { <SparkItem spark={s.clone()} highlighted={highlighted} /> }
@@ -977,7 +923,7 @@ pub fn DetailModal(props: &DetailModalProps) -> Html {
                                                 let lb = sc.limit_break_count.min(4);
                                                 let is_mlb = lb >= 4;
                                                 let is_borrow = sc.position == 6;
-                                                let (variant, character_name) = parse_card_name(&sc.name);
+                                                let (variant, character_name) = parse_variant_name(&sc.name);
                                                 html! {
                                                     <div class={classes!(SupportCardRowStyle::CLASS_NAME, is_borrow.then_some("borrow-row"))}>
                                                         <span class={classes!(SupportCardLbStyle::CLASS_NAME, is_mlb.then_some("mlb"))}>

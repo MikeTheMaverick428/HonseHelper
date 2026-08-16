@@ -37,7 +37,7 @@ async fn compare_profile_response() {
     let raw_response =
         fetch_raw_json(&format!("/api/v4/user/profile/{}", account_id), None::<&()>).await;
 
-    let typed_response = client.get_profile(&account_id).await;
+    let typed_response = client.get_profile(&account_id, None).await;
 
     match (typed_response, raw_response) {
         (Ok(typed), Ok(raw)) => {

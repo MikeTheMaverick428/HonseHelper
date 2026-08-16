@@ -6,9 +6,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use shared::legacy_planner::lookup_dtos::{AffinityResult, SlimUma};
 use shared::{
     legacy_planner::{
-        AffinityPairInfo, InspirationSummaryRow, LegacyPlannerSlot, LegacyPlannerState,
-        LegacySlotValue, LegacyUma, ParentUma, PlannerAffinities, PlannerAffinitySummary,
-        SelectedTrainee, SparkGroupInfo, SparkSummaryRow, VeteranAffinity,
+        AffinityPairInfo, InspirationCarrierChance, InspirationSummaryRow, LegacyPlannerSlot,
+        LegacyPlannerState, LegacySlotValue, LegacyUma, ParentUma, PlannerAffinities,
+        PlannerAffinitySummary, SelectedTrainee, SparkGroupInfo, SparkSummaryRow,
+        VeteranAffinity,
     },
     models::CharacterOption,
     models::SparkType,
@@ -223,9 +224,21 @@ fn can_set_as_trainee(state: &LegacyPlannerState, character_id: i64) -> bool {
 }
 
 fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, String> {
-    let row: Option<(String, i64, Option<i64>, Option<i64>, bool)> = conn
+    let row: Option<(
+        String,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        bool,
+        i64,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+    )> = conn
         .query_row(
-            "SELECT COALESCE(td.name, 'Unknown'), v.trainee_id, v.parent_a, v.parent_b, v.owned
+            "SELECT COALESCE(td.name, 'Unknown'), v.trainee_id, v.parent_a, v.parent_b, v.owned,
+                    v.rank, v.rank_score, v.favorite_icon_type, v.min_hash, v.owner_id
              FROM veterans v
              LEFT JOIN trainee_data td ON td.id = v.trainee_id
              WHERE v.hash = ?1",
@@ -237,13 +250,30 @@ fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, 
                     row.get::<_, Option<i64>>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, bool>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
                 ))
             },
         )
         .optional()
         .map_err(|e| format!("query veteran failed: {e}"))?;
 
-    let Some((name, trainee_id, parent_a, parent_b, owned)) = row else {
+    let Some((
+        name,
+        trainee_id,
+        parent_a,
+        parent_b,
+        owned,
+        rank,
+        rank_score,
+        favorite_icon_type,
+        min_hash,
+        owner_id,
+    )) = row
+    else {
         return Ok(None);
     };
 
@@ -304,23 +334,38 @@ fn fetch_veteran_uma(conn: &Connection, hash: u64) -> Result<Option<LegacyUma>, 
         parent1_hash: parent_a.map(|v| v as u64),
         parent2_hash: parent_b.map(|v| v as u64),
         is_borrowed: !owned,
+        rank_score: (rank_score > 0).then_some(rank_score as u32),
+        rank: (rank > 0).then_some(rank as u16),
+        favorite_icon: favorite_icon_type.and_then(|t| {
+            shared::models::FavouriteIcon::try_from(t as i16).ok()
+        }),
+        min_hash: min_hash.map(|h| h as u64),
+        owner_id: owner_id.map(|o| o as u64),
     }))
 }
 
 fn fetch_parent_uma(conn: &Connection, hash: u64) -> Result<Option<ParentUma>, String> {
-    let row: Option<(String, i64)> = conn
+    let row: Option<(String, i64, i64, Option<i64>, bool)> = conn
         .query_row(
-            "SELECT COALESCE(td.name, 'Unknown'), p.trainee_id
+            "SELECT COALESCE(td.name, 'Unknown'), p.trainee_id, p.rank, p.owner_id, p.owned
              FROM parents p
              LEFT JOIN trainee_data td ON td.id = p.trainee_id
              WHERE p.hash = ?1",
             params![hash as i64],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, bool>(4)?,
+                ))
+            },
         )
         .optional()
         .map_err(|e| format!("query parent failed: {e}"))?;
 
-    let Some((name, trainee_id)) = row else {
+    let Some((name, trainee_id, rank, owner_id, owned)) = row else {
         return Ok(None);
     };
 
@@ -384,6 +429,9 @@ fn fetch_parent_uma(conn: &Connection, hash: u64) -> Result<Option<ParentUma>, S
         spark_groups,
         major_wins,
         api_mode: false,
+        rank: (rank > 0).then_some(rank as u16),
+        owner_id: owner_id.map(|o| o as u64),
+        is_borrowed: !owned,
     }))
 }
 
@@ -612,6 +660,13 @@ pub fn set_legacy_planner_slot_uma_moe_veteran(
         parent1_hash: v.parent_a.map(|h| h.as_u64()),
         parent2_hash: v.parent_b.map(|h| h.as_u64()),
         is_borrowed: true,
+        rank_score: (v.rank_score > 0).then_some(v.rank_score),
+        rank: (v.rank > 0).then_some(v.rank),
+        favorite_icon: v
+            .favorite_icon_type
+            .and_then(|t| shared::models::FavouriteIcon::try_from(t as i16).ok()),
+        min_hash: v.min_hash.map(|h| h.as_u64()),
+        owner_id: v.owner_id,
     };
 
     if matches!(
@@ -683,6 +738,9 @@ pub fn set_legacy_planner_slot_uma_moe_veteran(
                         spark_groups: p_spark_groups,
                         major_wins: parent.container_major_wins.clone(),
                         api_mode: true,
+                        rank: (parent.rank > 0).then_some(parent.rank),
+                        owner_id: parent.owner_id,
+                        is_borrowed: !parent.owned,
                     };
 
                     set_slot_value(state, gp_slot, Some(LegacySlotValue::ParentUma(parent_uma)));
@@ -1499,6 +1557,104 @@ fn calc_spark_chance(spark_type: SparkType, total_stars: i8, total_affinity: i32
     base_chance * (1.0 + total_affinity / 100.0)
 }
 
+/// Affinity multiplier applied to a single planner slot's spark trigger chance.
+///
+/// Grandparent: bAff[trainee|parent|grandparent] + Bonus[parent|grandparent]
+///
+/// Parent: bAff[trainee|parent] + bAff[parent1|parent2]
+///         + bAff[trainee|parent|grandparent1] + bAff[trainee|parent|grandparent2]
+///         + Bonus[parent|grandparent1] + Bonus[parent|grandparent2]
+///         + Bonus[parent1|parent2]
+///
+/// Only terms whose referenced slots are filled are counted.
+fn compute_slot_inspiration_affinity(
+    slot: LegacyPlannerSlot,
+    state: &LegacyPlannerState,
+    affinity: &AffinityStorage,
+) -> i32 {
+    let chosen_id = state.chosen_character.as_ref().map(|c| c.character_id);
+
+    let to_slim =
+        |v: &Option<LegacySlotValue>| v.as_ref().map(|u| Into::<SlimUma>::into(u.clone()));
+    let pa = to_slim(&state.parent_a);
+    let pb = to_slim(&state.parent_b);
+    let gpaa = to_slim(&state.grandparent_aa);
+    let gpab = to_slim(&state.grandparent_ab);
+    let gpba = to_slim(&state.grandparent_ba);
+    let gpbb = to_slim(&state.grandparent_bb);
+
+    let shared = |a: &SlimUma, b: &SlimUma| {
+        AffinityStorage::shared_wins_bonus(&a.wins, &b.wins) as i32
+    };
+    let pair = |a: i64, b: i64| affinity.pair_base(a, b) as i32;
+    let trio = |a: i64, b: i64, c: i64| affinity.trio_base(a, b, c) as i32;
+
+    let mut aff: i32 = 0;
+
+    match slot {
+        LegacyPlannerSlot::ParentA => {
+            if let (Some(c), Some(p)) = (chosen_id, &pa) {
+                aff += pair(c, p.character_id);
+            }
+            if let (Some(a), Some(b)) = (&pa, &pb) {
+                aff += pair(a.character_id, b.character_id);
+                aff += shared(a, b);
+            }
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pa, &gpaa) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pa, &gpab) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+        LegacyPlannerSlot::ParentB => {
+            if let (Some(c), Some(p)) = (chosen_id, &pb) {
+                aff += pair(c, p.character_id);
+            }
+            if let (Some(a), Some(b)) = (&pa, &pb) {
+                aff += pair(a.character_id, b.character_id);
+                aff += shared(a, b);
+            }
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pb, &gpba) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pb, &gpbb) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+        LegacyPlannerSlot::GrandparentAA => {
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pa, &gpaa) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+        LegacyPlannerSlot::GrandparentAB => {
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pa, &gpab) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+        LegacyPlannerSlot::GrandparentBA => {
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pb, &gpba) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+        LegacyPlannerSlot::GrandparentBB => {
+            if let (Some(c), Some(p), Some(g)) = (chosen_id, &pb, &gpbb) {
+                aff += trio(c, p.character_id, g.character_id);
+                aff += shared(p, g);
+            }
+        }
+    }
+
+    aff
+}
+
 #[tauri::command]
 pub fn get_planner_inspiration_summary(
     handle: State<'_, LegacyPlannerStateHandle>,
@@ -1510,40 +1666,38 @@ pub fn get_planner_inspiration_summary(
         None => return Ok(Vec::new()),
     };
     let affinity = affinity_store.lock().map_err(|e| e.to_string())?;
-    let affinity_summary = compute_affinity_summary_internal(state, &affinity);
-    let total_affinity_by_hash = affinity_summary.total_affinity_by_hash;
 
-    struct Accum {
-        spark_name: String,
-        spark_type: SparkType,
-        sum: f64,
-        not_product: f64,
-        expected_count_mode: bool,
-    }
+    let mut grouped: BTreeMap<
+        i64,
+        (String, SparkType, i32, usize, Vec<InspirationCarrierChance>),
+    > = BTreeMap::new();
 
-    let mut acc: BTreeMap<i64, Accum> = BTreeMap::new();
-
-    let slots_with_affinity: [(&Option<LegacySlotValue>, bool); 6] = [
-        (&state.parent_a, true),
-        (&state.parent_b, true),
-        (&state.grandparent_aa, false),
-        (&state.grandparent_ab, false),
-        (&state.grandparent_ba, false),
-        (&state.grandparent_bb, false),
+    let slots: [LegacyPlannerSlot; 6] = [
+        LegacyPlannerSlot::ParentA,
+        LegacyPlannerSlot::ParentB,
+        LegacyPlannerSlot::GrandparentAA,
+        LegacyPlannerSlot::GrandparentAB,
+        LegacyPlannerSlot::GrandparentBA,
+        LegacyPlannerSlot::GrandparentBB,
     ];
 
-    for (slot, is_parent) in &slots_with_affinity {
-        let Some(value) = slot else { continue };
-        let (hash, spark_groups, is_legacy) = match value {
-            LegacySlotValue::LegacyUma(u) => (u.hash, &u.spark_groups, true),
-            LegacySlotValue::ParentUma(u) => (u.hash, &u.spark_groups, false),
+    for slot in slots {
+        let value = match slot {
+            LegacyPlannerSlot::ParentA => &state.parent_a,
+            LegacyPlannerSlot::ParentB => &state.parent_b,
+            LegacyPlannerSlot::GrandparentAA => &state.grandparent_aa,
+            LegacyPlannerSlot::GrandparentAB => &state.grandparent_ab,
+            LegacyPlannerSlot::GrandparentBA => &state.grandparent_ba,
+            LegacyPlannerSlot::GrandparentBB => &state.grandparent_bb,
+        };
+        let Some(value) = value else { continue };
+        let (uma_name, spark_groups, is_legacy) = match value {
+            LegacySlotValue::LegacyUma(u) => (u.name.clone(), &u.spark_groups, true),
+            LegacySlotValue::ParentUma(u) => (u.name.clone(), &u.spark_groups, false),
             _ => continue,
         };
 
-        let mut uma_affinity = total_affinity_by_hash.get(&hash).copied().unwrap_or(0);
-        if *is_parent {
-            uma_affinity += total_affinity_by_hash.get(&0).copied().unwrap_or(0);
-        }
+        let uma_affinity = compute_slot_inspiration_affinity(slot, state, &affinity);
 
         for spark in spark_groups {
             let stars = if is_legacy {
@@ -1557,48 +1711,45 @@ pub fn get_planner_inspiration_summary(
             }
 
             let pct = calc_spark_chance(spark.spark_type, stars, uma_affinity);
+            let carrier = InspirationCarrierChance {
+                slot_label: slot.label().to_string(),
+                uma_name: uma_name.clone(),
+                chance_pct: pct,
+            };
 
-            if let Some(entry) = acc.get_mut(&spark.spark_group_id) {
-                entry.sum += pct;
-                if !entry.expected_count_mode {
-                    entry.not_product *= 1.0 - pct / 100.0;
-                    if pct > 100.0 {
-                        entry.expected_count_mode = true;
-                    }
-                }
-            } else {
-                let exceeds = pct > 100.0;
-                acc.insert(
-                    spark.spark_group_id,
-                    Accum {
-                        spark_name: spark.name.clone(),
-                        spark_type: spark.spark_type,
-                        sum: pct,
-                        not_product: if exceeds { 0.0 } else { 1.0 - pct / 100.0 },
-                        expected_count_mode: exceeds,
-                    },
-                );
-            }
+            grouped
+                .entry(spark.spark_group_id)
+                .and_modify(|(_, _, total, umas, carriers)| {
+                    *total += stars as i32;
+                    *umas += 1;
+                    carriers.push(carrier.clone());
+                })
+                .or_insert_with(|| {
+                    (
+                        spark.name.clone(),
+                        spark.spark_type,
+                        stars as i32,
+                        1,
+                        vec![carrier],
+                    )
+                });
         }
     }
 
-    let rows: Vec<InspirationSummaryRow> = acc
+    let rows: Vec<InspirationSummaryRow> = grouped
         .into_iter()
-        .map(|(id, a)| {
-            let (sparking_chance, career_chance) = if a.expected_count_mode {
-                (a.sum, a.sum * 2.0)
-            } else {
-                let union = 100.0 * (1.0 - a.not_product);
-                (union, 100.0 * (1.0 - a.not_product * a.not_product))
-            };
-            InspirationSummaryRow {
-                spark_group_id: id,
-                spark_name: a.spark_name,
-                spark_type: a.spark_type,
-                sparking_chance,
-                career_chance,
-            }
-        })
+        .map(
+            |(id, (spark_name, spark_type, total_stars, total_umas, carriers))| {
+                InspirationSummaryRow {
+                    spark_group_id: id,
+                    spark_name,
+                    spark_type,
+                    total_umas,
+                    total_stars,
+                    carriers,
+                }
+            },
+        )
         .collect();
 
     Ok(rows)
@@ -1618,7 +1769,7 @@ pub async fn open_legacy_planner_window(app: AppHandle) -> Result<(), String> {
         .join(label);
     WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
         .title("Legacy Planner")
-        .inner_size(1100.0, 850.0)
+        .inner_size(1300.0, 1000.0)
         .resizable(true)
         .data_directory(data_dir)
         .build()

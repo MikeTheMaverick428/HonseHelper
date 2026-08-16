@@ -188,14 +188,155 @@ pub async fn query_uma_moe_veterans(
 #[tauri::command]
 pub async fn save_uma_moe_veteran(
     hash: String,
+    api_key_state: State<'_, ApiKeyState>,
     cache: State<'_, UmaMoeCache>,
 ) -> Result<String, String> {
     let hash_u64 = u64::from_str_radix(&hash, 16).map_err(|e| format!("invalid hash: {e}"))?;
     let group = cache
         .get(hash_u64)
         .ok_or_else(|| "veteran not found in cache".to_string())?;
-    let conn = crate::db::app_db::open_app_database_connection()?;
-    let _ = crate::veterans::process_group_direct(&group, &conn)?;
+
+    let owner_id_u64 = group
+        .veteran
+        .owner_id
+        .ok_or_else(|| "veteran has no owner_id".to_string())?;
+    let account_id = owner_id_u64.to_string();
+    let owner_id_i64: i64 = owner_id_u64
+        .try_into()
+        .map_err(|_| format!("owner_id out of range: {owner_id_u64}"))?;
+
+    let api_key = api_key_state
+        .api_key
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "API key not configured".to_string())?;
+
+    let client = uma_moe_api::UmaMoeClient::new().with_api_key(&api_key);
+    let profile = client
+        .get_profile(&account_id, Some(&uma_moe_api::types::requests::ProfileRequest::exclude_lite()))
+        .await
+        .map_err(|e| format!("API error: {e}"))?;
+
+    let inh = profile
+        .inheritance
+        .ok_or_else(|| "trainer has no active borrow veteran".to_string())?;
+
+    let last_updated = profile
+        .borrow_stats
+        .as_ref()
+        .and_then(|b| b.last_recheck_at.clone())
+        .unwrap_or_default();
+
+    let mut group = umamoe::adapt_inheritance(inh, &last_updated);
+    group.veteran.is_browser = true;
+
+    let trainer_name = profile
+        .trainer
+        .as_ref()
+        .map(|t| t.name.clone())
+        .unwrap_or_default();
+    let comment = profile
+        .trainer
+        .as_ref()
+        .and_then(|t| t.comment.clone())
+        .unwrap_or_default();
+    let circle_id = profile
+        .circle
+        .as_ref()
+        .map(|c| c.circle_id)
+        .unwrap_or(0);
+    let circle_name = profile
+        .circle
+        .as_ref()
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
+    let fan = profile
+        .fan_history
+        .as_ref()
+        .map(|fh| fh.alltime.total_fans)
+        .unwrap_or(0);
+
+    let hash = group.veteran.hash.as_i64();
+    let character_id = group.veteran.trainee_id;
+    let rarity = i64::from(group.veteran.rarity);
+    let rank = i64::from(group.veteran.rank);
+    let rank_score = i64::from(group.veteran.rank_score);
+
+    let mut conn = app_db::open_app_database_connection()?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("failed to start save transaction: {e}"))?;
+
+    crate::veterans::process_group_direct(&group, &tx)?;
+    crate::veterans::deactivate_trainer_veterans(&tx, owner_id_i64)?;
+
+    tx.execute(
+        r#"INSERT INTO trainers (
+            trainer_id, name, friend_state, is_following, honor_id, last_login,
+            comment, fan, circle_id, circle_name, borrow_uma_hash, borrow_uma_character_id,
+            borrow_uma_rarity, borrow_uma_rank, borrow_uma_rank_score, created_at, updated_at,
+            last_update_source
+        ) VALUES (?1, ?2, 0, 0, 0, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'), datetime('now'), 'uma_moe')
+        ON CONFLICT(trainer_id) DO UPDATE SET
+            name = excluded.name,
+            comment = excluded.comment,
+            fan = excluded.fan,
+            circle_id = excluded.circle_id,
+            circle_name = excluded.circle_name,
+            borrow_uma_hash = excluded.borrow_uma_hash,
+            borrow_uma_character_id = excluded.borrow_uma_character_id,
+            borrow_uma_rarity = excluded.borrow_uma_rarity,
+            borrow_uma_rank = excluded.borrow_uma_rank,
+            borrow_uma_rank_score = excluded.borrow_uma_rank_score,
+            updated_at = datetime('now'),
+            last_update_source = 'uma_moe'
+        "#,
+        params![
+            owner_id_i64,
+            trainer_name,
+            comment,
+            fan,
+            circle_id,
+            circle_name,
+            hash,
+            character_id,
+            rarity,
+            rank,
+            rank_score,
+        ],
+    )
+    .map_err(|e| format!("upsert trainer: {e}"))?;
+
+    if let Some(sc) = &profile.support_card {
+        let support_card_id = i64::from(sc.support_card_id);
+        if support_card_id > 0 {
+            let limit_break_count = i64::from(sc.limit_break_count.unwrap_or(0));
+            let sc_rarity: i64 = tx
+                .query_row(
+                    "SELECT rarity FROM support_card_data WHERE id = ?1",
+                    params![support_card_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0);
+            let level =
+                shared::trainer_browser::max_level_for_limit_break(sc_rarity, limit_break_count);
+            tx.execute(
+                r#"INSERT INTO trainer_support_card (
+                    trainer_id, support_card_id, level, limit_break_count
+                ) VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(trainer_id, support_card_id) DO UPDATE SET
+                    level = excluded.level,
+                    limit_break_count = excluded.limit_break_count
+                "#,
+                params![owner_id_i64, support_card_id, level, limit_break_count],
+            )
+            .map_err(|e| format!("upsert support card: {e}"))?;
+        }
+    }
+
+    tx.commit()
+        .map_err(|e| format!("commit: {e}"))?;
 
     Ok("saved".to_string())
 }

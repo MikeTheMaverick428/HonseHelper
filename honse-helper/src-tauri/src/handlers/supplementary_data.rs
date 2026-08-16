@@ -140,6 +140,9 @@ fn import_events_json_str(json_str: &str) -> Result<SupplementaryDataSyncReport,
             "INSERT OR IGNORE INTO support_event (story_id, support_card_id, character_id, trainee_id, event_name, category, conditions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )
         .map_err(|e| e.to_string())?;
+    let mut card_stmt = tx
+        .prepare("INSERT OR IGNORE INTO support_event_card (story_id, support_card_id) VALUES (?1, ?2)")
+        .map_err(|e| e.to_string())?;
     let mut choice_stmt = tx
         .prepare("INSERT INTO support_event_choice (story_id, choice_index) VALUES (?1, ?2)")
         .map_err(|e| e.to_string())?;
@@ -180,6 +183,11 @@ fn import_events_json_str(json_str: &str) -> Result<SupplementaryDataSyncReport,
                     conditions_json
                 ])
                 .map_err(|e| e.to_string())?;
+            if let Some(support_card_id) = event.support_card_id {
+                card_stmt
+                    .execute(params![story_id, support_card_id])
+                    .map_err(|e| e.to_string())?;
+            }
             if rows == 0 {
                 continue;
             }
@@ -238,6 +246,7 @@ fn import_events_json_str(json_str: &str) -> Result<SupplementaryDataSyncReport,
         }
     }
 
+    drop(card_stmt);
     drop(reward_stmt);
     drop(branch_stmt);
     drop(choice_stmt);

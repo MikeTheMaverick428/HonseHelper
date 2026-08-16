@@ -1,6 +1,9 @@
 use crate::styles::{filter_panel::*, legacy_planner::SecondaryBtnStyle, Style};
 use shared::db_models::UmaHash;
-use shared::filters::{AptitudeType, CharacterFilter, Filter, TraineeFilter};
+use shared::filters::{
+    AptitudeType, CharacterFilter, Filter, TraineeFilter, WhiteSparkMatchCriterion,
+    WhiteSparkMatchFilter,
+};
 use shared::veteran_browser::FilterOptions;
 use yew::prelude::*;
 
@@ -32,6 +35,7 @@ enum AddingType {
     SparkPink,
     SparkGreen,
     SparkWhite,
+    WhiteSparkMatch,
     WhiteSparkCount,
     MajorWinsCount,
     SpecificMajorWin,
@@ -247,6 +251,82 @@ fn filter_description(f: &Filter, options: Option<&FilterOptions>) -> String {
             }
             s
         }
+        Filter::WhiteSparkMatch(wsf) => {
+            let names: Vec<String> = wsf
+                .group_ids
+                .iter()
+                .filter_map(|id| {
+                    options.and_then(|opts| {
+                        opts.white_spark_groups
+                            .iter()
+                            .find(|(gid, _)| gid == id)
+                            .map(|(_, name)| name.clone())
+                    })
+                })
+                .collect();
+            let mut s = if names.len() == 1 {
+                format!("White Spark Match: {}", names[0])
+            } else if !names.is_empty() {
+                format!("White Spark Match: {} groups", names.len())
+            } else if wsf.group_ids.len() == 1 {
+                format!("White Spark Match: #{}", wsf.group_ids[0])
+            } else {
+                format!("White Spark Match: {} groups", wsf.group_ids.len())
+            };
+            if let Some(v) = wsf.min_matched {
+                s += &format!(" matched>={}", v);
+            }
+            if let Some(v) = wsf.min_stars {
+                s += &format!(" stars>={}", v);
+            }
+            if let Some(v) = wsf.max_stars {
+                s += &format!(" stars<={}", v);
+            }
+            if wsf.on_trainee {
+                s += " (trainee)";
+            }
+            if let Some(v) = wsf.shared_count {
+                s += &format!(" shared>={}", v);
+            }
+            let prios = if wsf.priorities.is_empty() {
+                WhiteSparkMatchCriterion::all().to_vec()
+            } else {
+                wsf.priorities.clone()
+            };
+            let labels: Vec<&str> = prios.iter().map(|c| c.label()).collect();
+            s += &format!(" | sort: {}", labels.join(" > "));
+            s
+        }
+    }
+}
+
+fn filter_to_adding_type(f: &Filter) -> Option<(&'static str, AddingType)> {
+    match f {
+        Filter::TraineeHash(_) => Some(("hash", AddingType::Hash)),
+        Filter::ParentHash(_) => Some(("parent_hash", AddingType::ParentHash)),
+        Filter::HasParent(_) => Some(("has_parent", AddingType::HasParent)),
+        Filter::Character(_) => Some(("character", AddingType::Character)),
+        Filter::Scenario(_) => Some(("scenario", AddingType::Scenario)),
+        Filter::Trainee(_) => Some(("trainee", AddingType::Trainee)),
+        Filter::Ranking { .. } => Some(("rank", AddingType::Ranking)),
+        Filter::Spark(sp) => match sp.spark_type {
+            Some(2) => Some(("spark_pink", AddingType::SparkPink)),
+            Some(3) => Some(("spark_green", AddingType::SparkGreen)),
+            _ => Some(("spark_blue", AddingType::SparkBlue)),
+        },
+        Filter::WhiteSparkCount { .. } => Some(("white_spark", AddingType::WhiteSparkCount)),
+        Filter::MajorWinsCount { .. } => Some(("wins", AddingType::MajorWinsCount)),
+        Filter::SpecificMajorWin { .. } => Some(("specific_win", AddingType::SpecificMajorWin)),
+        Filter::Aptitude { .. } => Some(("apt", AddingType::Aptitude)),
+        Filter::HasFavouriteMemo { .. } => Some(("memo", AddingType::FavouriteMemo)),
+        Filter::HasFavouriteIcon { .. } => Some(("icon", AddingType::FavouriteIcon)),
+        Filter::HasTag { .. } => Some(("tag", AddingType::Tag)),
+        Filter::Affinity { .. } => Some(("affinity", AddingType::Affinity)),
+        Filter::BorrowStatus { .. } => Some(("borrow", AddingType::BorrowStatus)),
+        Filter::IsIndependentTrainer { .. } => Some(("indep", AddingType::IsIndependentTrainer)),
+        Filter::TrainerId(_) => Some(("trainer", AddingType::TrainerId)),
+        Filter::WhiteSpark(_) => Some(("spark_white", AddingType::SparkWhite)),
+        Filter::WhiteSparkMatch(_) => Some(("white_spark_match", AddingType::WhiteSparkMatch)),
     }
 }
 
@@ -296,6 +376,8 @@ fn build_add_inputs(
     add_spark_max: &UseStateHandle<String>,
     add_spark_on_character: &UseStateHandle<bool>,
     add_spark_min_uma: &UseStateHandle<String>,
+    add_wsm_min_matched: &UseStateHandle<String>,
+    add_wsm_priorities: &UseStateHandle<Vec<WhiteSparkMatchCriterion>>,
     options: &Option<FilterOptions>,
     api_mode: bool,
 ) -> Option<Html> {
@@ -687,6 +769,123 @@ fn build_add_inputs(
                         </>
                     }
                 }
+                AddingType::WhiteSparkMatch => {
+                    let opts = match options {
+                        Some(o) => o
+                            .white_spark_groups
+                            .iter()
+                            .map(|(id, name)| SelectOption {
+                                value: *id,
+                                label: name.clone(),
+                            })
+                            .collect(),
+                        None => Vec::new(),
+                    };
+                    let on_select = {
+                        let v = add_white_spark_group_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            if !current.contains(&id) {
+                                current.push(id);
+                                v.set(current);
+                            }
+                        })
+                    };
+                    let on_remove = {
+                        let v = add_white_spark_group_ids.clone();
+                        Callback::from(move |id: i64| {
+                            let mut current = (*v).clone();
+                            current.retain(|x| *x != id);
+                            v.set(current);
+                        })
+                    };
+                    let selected = (**add_white_spark_group_ids).clone();
+                    let on_min = add_spark_min.clone();
+                    let on_max = add_spark_max.clone();
+                    let on_char = add_spark_on_character.clone();
+                    let on_min_uma = add_spark_min_uma.clone();
+                    let on_min_matched = add_wsm_min_matched.clone();
+                    html! {
+                        <>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"White Spark Groups"}</label>
+                                <MultiSearchableSelect<i64>
+                                    options={opts}
+                                    on_select={on_select}
+                                    on_remove={on_remove}
+                                    selected={selected}
+                                    placeholder={"Search white spark..."}
+                                />
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"Star Range"}</label>
+                                <div class={FilterRangeStyle::CLASS_NAME}>
+                                    <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Min"
+                                        value={(**add_spark_min).clone()}
+                                        oninput={Callback::from(move|e:InputEvent| on_min.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
+                                    <span class={RangeSepStyle::CLASS_NAME}>{"-"}</span>
+                                    <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Max"
+                                        value={(**add_spark_max).clone()}
+                                        oninput={Callback::from(move|e:InputEvent| on_max.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
+                                </div>
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>
+                                    <input type="checkbox" checked={**add_spark_on_character}
+                                        onchange={Callback::from(move|e:Event| on_char.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().checked()))} />
+                                    {" On trainee"}
+                                </label>
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"Min Shared Umas"}</label>
+                                <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="Min uma count"
+                                    value={(**add_spark_min_uma).clone()}
+                                    oninput={Callback::from(move|e:InputEvent| on_min_uma.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"Min matched skills"}</label>
+                                <input type="number" class={FilterInputStyle::CLASS_NAME} placeholder="1+"
+                                    value={(**add_wsm_min_matched).clone()}
+                                    oninput={Callback::from(move|e:InputEvent| on_min_matched.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))} />
+                            </div>
+                            <div class={FilterSectionStyle::CLASS_NAME}>
+                                <label>{"Sort priority (top = most important)"}</label>
+                                <div style="display:flex;flex-direction:column;gap:4px;">
+                                    {for add_wsm_priorities.iter().enumerate().map(|(i, c)| {
+                                        let idx = i;
+                                        let label = c.label();
+                                        let total = (**add_wsm_priorities).len();
+                                        let v_up = add_wsm_priorities.clone();
+                                        let up_disabled = idx == 0;
+                                        let on_up = Callback::from(move |_| {
+                                            if idx > 0 {
+                                                let mut order = (*v_up).clone();
+                                                order.swap(idx, idx - 1);
+                                                v_up.set(order);
+                                            }
+                                        });
+                                        let v_down = add_wsm_priorities.clone();
+                                        let down_disabled = idx + 1 >= total;
+                                        let on_down = Callback::from(move |_| {
+                                            if idx + 1 < (*v_down).len() {
+                                                let mut order = (*v_down).clone();
+                                                order.swap(idx, idx + 1);
+                                                v_down.set(order);
+                                            }
+                                        });
+                                        html! {
+                                            <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                                                <span style="flex:1;color:#e2e8f0;">{label}</span>
+                                                <button type="button" disabled={up_disabled} onclick={on_up} style="background:#334155;color:#e2e8f0;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;">{"\u{25B2}"}</button>
+                                                <button type="button" disabled={down_disabled} onclick={on_down} style="background:#334155;color:#e2e8f0;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;">{"\u{25BC}"}</button>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            </div>
+                        </>
+                    }
+                }
                 AddingType::WhiteSparkCount => html! {
                     <div class={FilterSectionStyle::CLASS_NAME}>
                         <label>{"White Spark Count"}</label>
@@ -779,48 +978,13 @@ fn build_add_inputs(
                     }
                 },
                 AddingType::Aptitude => {
-                    let field_opts = vec![
-                        SelectOption {
-                            value: "Turf".to_string(),
-                            label: "Turf".to_string(),
-                        },
-                        SelectOption {
-                            value: "Dirt".to_string(),
-                            label: "Dirt".to_string(),
-                        },
-                        SelectOption {
-                            value: "Sprint".to_string(),
-                            label: "Sprint".to_string(),
-                        },
-                        SelectOption {
-                            value: "Mile".to_string(),
-                            label: "Mile".to_string(),
-                        },
-                        SelectOption {
-                            value: "Medium".to_string(),
-                            label: "Medium".to_string(),
-                        },
-                        SelectOption {
-                            value: "Long".to_string(),
-                            label: "Long".to_string(),
-                        },
-                        SelectOption {
-                            value: "Front".to_string(),
-                            label: "Front".to_string(),
-                        },
-                        SelectOption {
-                            value: "PaceChaser".to_string(),
-                            label: "Pace Chaser".to_string(),
-                        },
-                        SelectOption {
-                            value: "LateSurger".to_string(),
-                            label: "Late Surger".to_string(),
-                        },
-                        SelectOption {
-                            value: "EndCloser".to_string(),
-                            label: "End Closer".to_string(),
-                        },
-                    ];
+                    let field_opts = AptitudeType::all()
+                        .iter()
+                        .map(|apt| SelectOption {
+                            value: apt.value().to_string(),
+                            label: apt.label().to_string(),
+                        })
+                        .collect::<Vec<_>>();
                     let level_opts = vec![
                         SelectOption {
                             value: "S".to_string(),
@@ -1103,6 +1267,10 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
     let add_has_parent_hash: UseStateHandle<Vec<String>> = use_state(Vec::new);
     let add_trainer_ids: UseStateHandle<Vec<String>> = use_state(Vec::new);
     let add_white_spark_group_ids: UseStateHandle<Vec<i64>> = use_state(Vec::new);
+    let add_wsm_min_matched = use_state(String::new);
+    let add_wsm_priorities: UseStateHandle<Vec<WhiteSparkMatchCriterion>> =
+        use_state(|| WhiteSparkMatchCriterion::all().to_vec());
+    let editing_idx: UseStateHandle<Option<usize>> = use_state(|| None);
 
     let cancel_adding = {
         let adding = adding.clone();
@@ -1126,8 +1294,12 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_white_spark_group_ids = add_white_spark_group_ids.clone();
         let add_win_ids = add_win_ids.clone();
         let add_win_shared = add_win_shared.clone();
+        let add_wsm_min_matched = add_wsm_min_matched.clone();
+        let add_wsm_priorities = add_wsm_priorities.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |_| {
             adding.set(AddingType::None);
+            editing_idx.set(None);
             add_character_ids.set(Vec::new());
             add_character_negate.set(false);
             add_character_on_parent.set(false);
@@ -1146,6 +1318,8 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             add_has_parent_hash.set(Vec::new());
             add_trainer_ids.set(Vec::new());
             add_white_spark_group_ids.set(Vec::new());
+            add_wsm_min_matched.set(String::new());
+            add_wsm_priorities.set(WhiteSparkMatchCriterion::all().to_vec());
             add_win_ids.set(Vec::new());
             add_win_shared.set(false);
         })
@@ -1172,6 +1346,8 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_white_spark_group_ids = add_white_spark_group_ids.clone();
         let add_win_ids = add_win_ids.clone();
         let add_win_shared = add_win_shared.clone();
+        let add_wsm_min_matched = add_wsm_min_matched.clone();
+        let add_wsm_priorities = add_wsm_priorities.clone();
         move || {
             add_character_ids.set(Vec::new());
             add_character_negate.set(false);
@@ -1191,9 +1367,173 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             add_has_parent_hash.set(Vec::new());
             add_trainer_ids.set(Vec::new());
             add_white_spark_group_ids.set(Vec::new());
+            add_wsm_min_matched.set(String::new());
+            add_wsm_priorities.set(WhiteSparkMatchCriterion::all().to_vec());
             add_win_ids.set(Vec::new());
             add_win_shared.set(false);
         }
+    };
+
+    let open_edit = {
+        let adding = adding.clone();
+        let add_filter_type = add_filter_type.clone();
+        let editing_idx = editing_idx.clone();
+        let add_hash = add_hash.clone();
+        let add_parent_hash = add_parent_hash.clone();
+        let add_has_parent_hash = add_has_parent_hash.clone();
+        let add_character_ids = add_character_ids.clone();
+        let add_character_negate = add_character_negate.clone();
+        let add_character_on_parent = add_character_on_parent.clone();
+        let add_scenario = add_scenario.clone();
+        let add_trainee_ids = add_trainee_ids.clone();
+        let add_trainee_negate = add_trainee_negate.clone();
+        let add_trainee_on_parent = add_trainee_on_parent.clone();
+        let add_rank_min = add_rank_min.clone();
+        let add_rank_max = add_rank_max.clone();
+        let add_white_min = add_white_min.clone();
+        let add_white_max = add_white_max.clone();
+        let add_wins_min = add_wins_min.clone();
+        let add_wins_both = add_wins_both.clone();
+        let add_win_ids = add_win_ids.clone();
+        let add_win_shared = add_win_shared.clone();
+        let add_apt_field = add_apt_field.clone();
+        let add_apt_level = add_apt_level.clone();
+        let add_memo_text = add_memo_text.clone();
+        let add_icon_type = add_icon_type.clone();
+        let add_borrow = add_borrow.clone();
+        let add_indep = add_indep.clone();
+        let add_affinity_min = add_affinity_min.clone();
+        let add_tag_value = add_tag_value.clone();
+        let add_trainer_ids = add_trainer_ids.clone();
+        let add_white_spark_group_ids = add_white_spark_group_ids.clone();
+        let add_spark_group = add_spark_group.clone();
+        let add_spark_min = add_spark_min.clone();
+        let add_spark_max = add_spark_max.clone();
+        let add_spark_on_character = add_spark_on_character.clone();
+        let add_spark_min_uma = add_spark_min_uma.clone();
+        let add_wsm_min_matched = add_wsm_min_matched.clone();
+        let add_wsm_priorities = add_wsm_priorities.clone();
+        let filters = props.filters.clone();
+        let reset = reset_states.clone();
+        Callback::from(move |idx: usize| {
+            let Some(f) = filters.get(idx) else { return };
+            let Some((value, t)) = filter_to_adding_type(f) else { return };
+            reset();
+            adding.set(t);
+            add_filter_type.set(value.to_string());
+            editing_idx.set(Some(idx));
+            match f {
+                Filter::TraineeHash(hashes) => {
+                    add_hash.set(
+                        hashes.iter().map(|h| format!("{:016x}", h.as_u64())).collect(),
+                    );
+                }
+                Filter::ParentHash(hashes) => {
+                    add_parent_hash.set(
+                        hashes.iter().map(|h| format!("{:016x}", h.as_u64())).collect(),
+                    );
+                }
+                Filter::HasParent(hashes) => {
+                    add_has_parent_hash.set(
+                        hashes.iter().map(|h| format!("{:016x}", h.as_u64())).collect(),
+                    );
+                }
+                Filter::Character(cf) => {
+                    add_character_ids.set(cf.ids.clone());
+                    add_character_negate.set(cf.negate);
+                    add_character_on_parent.set(cf.on_parent);
+                }
+                Filter::Scenario(s) => {
+                    add_scenario.set(s.to_string());
+                }
+                Filter::Trainee(tf) => {
+                    add_trainee_ids.set(tf.ids.clone());
+                    add_trainee_negate.set(tf.negate);
+                    add_trainee_on_parent.set(tf.on_parent);
+                }
+                Filter::Ranking { min, max } => {
+                    add_rank_min.set(min.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                    add_rank_max.set(max.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                }
+                Filter::Spark(sp) => {
+                    add_spark_group.set(Some(sp.group_id as i64));
+                    add_spark_min.set(sp.min_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_max.set(sp.max_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_on_character.set(sp.on_trainee);
+                    add_spark_min_uma.set(sp.shared_count.map(|v| v.to_string()).unwrap_or_default());
+                }
+                Filter::WhiteSparkCount { min, max } => {
+                    add_white_min.set(min.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                    add_white_max.set(max.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                }
+                Filter::MajorWinsCount { min, both } => {
+                    add_wins_min.set(min.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                    add_wins_both.set(*both);
+                }
+                Filter::SpecificMajorWin {
+                    major_win_names,
+                    shared_with_parent,
+                } => {
+                    add_win_ids.set(major_win_names.clone());
+                    add_win_shared.set(matches!(shared_with_parent, Some(true)));
+                }
+                Filter::Aptitude {
+                    aptitude_type,
+                    min_level,
+                } => {
+                    add_apt_field.set(aptitude_type.value().to_string());
+                    let lvl = match *min_level {
+                        8 => "S",
+                        7 => "A",
+                        6 => "B",
+                        5 => "C",
+                        4 => "D",
+                        3 => "E",
+                        2 => "F",
+                        1 => "G",
+                        _ => "S",
+                    };
+                    add_apt_level.set(lvl.to_string());
+                }
+                Filter::HasFavouriteMemo { search_text } => {
+                    add_memo_text.set(search_text.clone().unwrap_or_default());
+                }
+                Filter::HasFavouriteIcon { icon_type } => {
+                    add_icon_type.set(icon_type.as_ref().map(|v| v.to_string()).unwrap_or_default());
+                }
+                Filter::HasTag { tag_value } => {
+                    add_tag_value.set(tag_value.clone());
+                }
+                Filter::Affinity { min } => {
+                    add_affinity_min.set(min.to_string());
+                }
+                Filter::BorrowStatus { is_borrowed } => {
+                    add_borrow.set(if *is_borrowed { "Borrowed" } else { "Owned" }.to_string());
+                }
+                Filter::IsIndependentTrainer { is_independent } => {
+                    add_indep.set(if *is_independent { "Yes" } else { "No" }.to_string());
+                }
+                Filter::TrainerId(ids) => {
+                    add_trainer_ids.set(ids.iter().map(|v| v.to_string()).collect());
+                }
+                Filter::WhiteSpark(wsf) => {
+                    add_white_spark_group_ids.set(wsf.group_ids.clone());
+                    add_spark_min.set(wsf.min_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_max.set(wsf.max_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_on_character.set(wsf.on_trainee);
+                    add_spark_min_uma.set(wsf.shared_count.map(|v| v.to_string()).unwrap_or_default());
+                }
+                Filter::WhiteSparkMatch(wsf) => {
+                    add_white_spark_group_ids.set(wsf.group_ids.clone());
+                    add_spark_min.set(wsf.min_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_max.set(wsf.max_stars.map(|v| v.to_string()).unwrap_or_default());
+                    add_spark_on_character.set(wsf.on_trainee);
+                    add_spark_min_uma.set(wsf.shared_count.map(|v| v.to_string()).unwrap_or_default());
+                    add_wsm_min_matched.set(wsf.min_matched.map(|v| v.to_string()).unwrap_or_default());
+                    add_wsm_priorities.set(wsf.priorities.clone());
+                }
+            }
+        })
     };
 
     let on_change = props.on_change.clone();
@@ -1236,6 +1576,9 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         let add_spark_min_uma = add_spark_min_uma.clone();
         let add_trainer_ids = add_trainer_ids.clone();
         let add_white_spark_group_ids = add_white_spark_group_ids.clone();
+        let add_wsm_min_matched = add_wsm_min_matched.clone();
+        let add_wsm_priorities = add_wsm_priorities.clone();
+        let editing_idx = editing_idx.clone();
         let reset = reset_states.clone();
         Callback::from(move |_| {
             let new_filter = match &*adding {
@@ -1406,6 +1749,22 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                         }))
                     }
                 }
+                AddingType::WhiteSparkMatch => {
+                    let ids = (*add_white_spark_group_ids).clone();
+                    if ids.is_empty() {
+                        None
+                    } else {
+                        Some(Filter::WhiteSparkMatch(WhiteSparkMatchFilter {
+                            group_ids: ids,
+                            min_stars: add_spark_min.parse::<i32>().ok(),
+                            max_stars: add_spark_max.parse::<i32>().ok(),
+                            on_trainee: *add_spark_on_character,
+                            shared_count: add_spark_min_uma.parse::<i8>().ok().filter(|v| *v > 0),
+                            min_matched: add_wsm_min_matched.parse::<i32>().ok().filter(|v| *v > 0),
+                            priorities: (*add_wsm_priorities).clone(),
+                        }))
+                    }
+                }
                 AddingType::None => None,
                 AddingType::SparkBlue | AddingType::SparkPink | AddingType::SparkGreen => {
                     let spark_type = match &*adding {
@@ -1428,9 +1787,20 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             };
             if let Some(f) = new_filter {
                 let mut updated = filters.clone();
-                updated.push(f);
+                match *editing_idx {
+                    Some(i) if i < updated.len() => {
+                        updated[i] = f;
+                    }
+                    _ => {
+                        if matches!(f, Filter::WhiteSparkMatch(_)) {
+                            updated.retain(|x| !matches!(x, Filter::WhiteSparkMatch(_)));
+                        }
+                        updated.push(f);
+                    }
+                }
                 on_change.emit(updated);
             }
+            editing_idx.set(None);
             adding.set(AddingType::None);
             add_filter_type.set(String::new());
             reset();
@@ -1440,10 +1810,18 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
     let remove_filter = {
         let on_change = on_change.clone();
         let filters = props.filters.clone();
+        let editing_idx = editing_idx.clone();
         Callback::from(move |idx: usize| {
             let mut updated = filters.clone();
             updated.remove(idx);
             on_change.emit(updated);
+            if let Some(e) = *editing_idx {
+                if e == idx {
+                    editing_idx.set(None);
+                } else if e > idx {
+                    editing_idx.set(Some(e - 1));
+                }
+            }
         })
     };
 
@@ -1455,6 +1833,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         AddingType::Character => !add_character_ids.is_empty(),
         AddingType::Trainee => !add_trainee_ids.is_empty(),
         AddingType::SpecificMajorWin => !add_win_ids.is_empty(),
+        AddingType::SparkWhite | AddingType::WhiteSparkMatch => !add_white_spark_group_ids.is_empty(),
         _ => true,
     };
 
@@ -1493,6 +1872,8 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
         &add_spark_max,
         &add_spark_on_character,
         &add_spark_min_uma,
+        &add_wsm_min_matched,
+        &add_wsm_priorities,
         &props.options,
         props.api_mode,
     );
@@ -1501,7 +1882,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             <div style="margin-top:8px;">
                 {inputs}
                 <div class={FilterActionsStyle::CLASS_NAME} style="margin-top:8px;">
-                    <button disabled={!can_add} onclick={add_filter}>{"Add"}</button>
+                    <button disabled={!can_add} onclick={add_filter}>{if (*editing_idx).is_some() { "Save" } else { "Add" }}</button>
                     <button class={SecondaryBtnStyle::CLASS_NAME} onclick={cancel_adding}>{"Cancel"}</button>
                 </div>
             </div>
@@ -1543,14 +1924,26 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                     {for display_indices.iter().map(|&i| {
                         let f = &props.filters[i];
                         let desc = filter_description(f, props.options.as_ref());
-                        let onclick = {
+                        let remove = {
                             let remove_filter = remove_filter.clone();
                             Callback::from(move |_| remove_filter.emit(i))
                         };
+                        let edit = {
+                            let open_edit = open_edit.clone();
+                            Callback::from(move |_| open_edit.emit(i))
+                        };
+                        let is_editing = matches!(*editing_idx, Some(e) if e == i);
+                        let pill_style = if is_editing {
+                            "display:flex;align-items:center;gap:6px;background:#1e293b;border-radius:6px;padding:4px 10px;margin-bottom:4px;font-size:12px;border:1px solid #f59e0b;".to_string()
+                        } else {
+                            "display:flex;align-items:center;gap:6px;background:#1e293b;border-radius:6px;padding:4px 10px;margin-bottom:4px;font-size:12px;border:1px solid #334155;".to_string()
+                        };
                         html! {
-                            <div key={i} class={FilterChipStyle::CLASS_NAME} style="display:flex;align-items:center;gap:6px;background:#1e293b;border-radius:6px;padding:4px 10px;margin-bottom:4px;font-size:12px;">
-                                <span style="flex:1;color:#e2e8f0;">{desc}</span>
-                                <button onclick={onclick} style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:0;font-size:14px;line-height:1;">{"\u{00D7}"}</button>
+                            <div key={i} class={FilterChipStyle::CLASS_NAME} style={pill_style}>
+                                <button type="button" onclick={edit} class={FilterChipTextStyle::CLASS_NAME} style="text-align:left;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">
+                                    {desc}
+                                </button>
+                                <button onclick={remove} style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:0;font-size:14px;line-height:1;">{"\u{00D7}"}</button>
                             </div>
                         }
                     })}
@@ -1558,6 +1951,11 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
             }
 
             <div class={FilterTitleStyle::CLASS_NAME}>{"Add Filter"}</div>
+            if (*editing_idx).is_some() {
+                <div style="color:#f59e0b;font-size:12px;margin-bottom:6px;">
+                    {"Editing existing filter — click Save to apply changes"}
+                </div>
+            }
             <div class={FilterSectionStyle::CLASS_NAME}>
                 <SearchableSelect<String>
                     options={
@@ -1572,6 +1970,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                                 SelectOption { value: "white_spark".to_string(), label: "White Spark Count".to_string() },
                                 SelectOption { value: "wins".to_string(), label: "Major Win Count".to_string() },
                                 SelectOption { value: "affinity".to_string(), label: "Affinity".to_string() },
+                                SelectOption { value: "trainer".to_string(), label: "Trainer ID".to_string() },
                             ]
                         } else {
                             vec![
@@ -1585,6 +1984,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                                 SelectOption { value: "spark_pink".to_string(), label: "Pink Spark".to_string() },
                                 SelectOption { value: "spark_green".to_string(), label: "Green Spark".to_string() },
                                 SelectOption { value: "spark_white".to_string(), label: "White Spark".to_string() },
+                                SelectOption { value: "white_spark_match".to_string(), label: "White Spark Match".to_string() },
                                 SelectOption { value: "white_spark".to_string(), label: "White Spark Count".to_string() },
                                 SelectOption { value: "wins".to_string(), label: "Major Win Count".to_string() },
                                 SelectOption { value: "specific_win".to_string(), label: "Specific Major Win".to_string() },
@@ -1615,6 +2015,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                             "spark_pink" => AddingType::SparkPink,
                             "spark_green" => AddingType::SparkGreen,
                             "spark_white" => AddingType::SparkWhite,
+                            "white_spark_match" => AddingType::WhiteSparkMatch,
                             "white_spark" => AddingType::WhiteSparkCount,
                             "wins" => AddingType::MajorWinsCount,
                             "specific_win" => AddingType::SpecificMajorWin,
@@ -1630,6 +2031,7 @@ pub fn FilterPanel(props: &FilterPanelProps) -> Html {
                         });
                     })}
                     placeholder={"Select type..."}
+                    disabled={(*editing_idx).is_some()}
                 />
             </div>
 

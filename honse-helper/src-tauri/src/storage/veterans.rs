@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use nohash_hasher::{IntMap, IntSet};
 use rusqlite::Connection;
 use shared::{
-    filters::{AptitudeType, Filter, SparkFilter},
+    filters::{AptitudeType, Filter, SparkFilter, WhiteSparkMatchCriterion, WhiteSparkMatchFilter},
     legacy_planner::{
         lookup_dtos::{PaginatedVeteranHash, SlimUma, SlimUmaGroup},
         LegacyPlannerSlot, LegacyPlannerState,
@@ -47,21 +47,23 @@ pub(crate) fn veteran_select_cols() -> String {
              (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
               JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
               WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
-             NULLIF(v.nickname_id, 0) AS nickname_id",
-            BASE_COLS
-        )
-    } else {
-        format!(
-            "{}, \
-             (SELECT COUNT(*) FROM veteran_win_count vw WHERE vw.veteran_hash = v.hash) AS major_wins_count, \
-             (SELECT COUNT(*) FROM veteran_win_count vwc WHERE vwc.veteran_hash = v.hash AND vwc.on_veteran != 0) AS major_wins_on_veteran_count, \
-             (SELECT COUNT(DISTINCT vss.spark_group_id) FROM veteran_spark_summary vss \
-              JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
-              WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_count, \
-             (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
-              JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
-              WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
-             NULLIF(v.nickname_id, 0) AS nickname_id",
+              NULLIF(v.nickname_id, 0) AS nickname_id, \
+              COALESCE((SELECT 1 FROM trainers WHERE trainer_id = v.owner_id AND is_following = 1 LIMIT 1), 0) AS from_followed_trainer",
+             BASE_COLS
+         )
+     } else {
+         format!(
+             "{}, \
+              (SELECT COUNT(*) FROM veteran_win_count vw WHERE vw.veteran_hash = v.hash) AS major_wins_count, \
+              (SELECT COUNT(*) FROM veteran_win_count vwc WHERE vwc.veteran_hash = v.hash AND vwc.on_veteran != 0) AS major_wins_on_veteran_count, \
+              (SELECT COUNT(DISTINCT vss.spark_group_id) FROM veteran_spark_summary vss \
+               JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+               WHERE vss.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_count, \
+              (SELECT COUNT(DISTINCT vhs.spark_id / 100) FROM veteran_has_spark vhs \
+               JOIN spark_data sd ON sd.group_id = vhs.spark_id / 100 \
+               WHERE vhs.veteran_hash = v.hash AND sd.spark_type IN (4,5)) AS white_spark_on_veteran_count, \
+              NULLIF(v.nickname_id, 0) AS nickname_id, \
+              COALESCE((SELECT 1 FROM trainers WHERE trainer_id = v.owner_id AND is_following = 1 LIMIT 1), 0) AS from_followed_trainer",
             BASE_COLS
         )
     }
@@ -109,6 +111,7 @@ pub(crate) fn make_veteran_row(row: &rusqlite::Row) -> rusqlite::Result<VeteranR
         nickname_id: row.get(34)?,
         spark_groups: Vec::new(),
         affinity: None,
+        from_followed_trainer: row.get::<_, i64>(35)? != 0,
     })
 }
 
@@ -296,7 +299,7 @@ impl VeteranStore {
     }
 
     /// Load veterans missing from the in-memory cache.
-    fn ensure_loaded(
+    pub(crate) fn ensure_loaded(
         &mut self,
         conn: &Connection,
         hashes: impl Iterator<Item = u64>,
@@ -485,6 +488,10 @@ impl VeteranStore {
         self.umas.get(&hash).map(|u| &u.veteran)
     }
 
+    pub fn get_veteran_group(&self, hash: u64) -> Option<&SlimUmaGroup> {
+        self.umas.get(&hash)
+    }
+
     /// Two-phase filter + sort pipeline.
     ///
     /// 1. DB-side SQL for non-Affinity filters + non-Affinity sort
@@ -514,14 +521,52 @@ impl VeteranStore {
         });
 
         // Step 3: DB-side query
-        let (where_clause, where_params) = Self::build_filter_where(&db_filters);
-        let order_clause = if sort.key == "Affinity" {
+        let (where_clause, mut all_params) = Self::build_filter_where(&db_filters);
+        let special_match = db_filters.iter().find_map(|f| {
+            if let Filter::WhiteSparkMatch(wsf) = f {
+                Some(wsf)
+            } else {
+                None
+            }
+        });
+        let affinity_sort = sort.key == "Affinity";
+        let wsm_active = special_match.filter(|w| !w.group_ids.is_empty());
+
+        // When sorting by Affinity, the affinity is computed Rust-side, so the white-spark
+        // match scores must be selected alongside the hashes and applied as the primary sort
+        // in Rust (affinity becomes the tiebreaker on equal scores).
+        let mut score_exprs: Vec<String> = Vec::new();
+        let mut score_params: Vec<SqlParam> = Vec::new();
+        let order_clause = if affinity_sort {
+            if let Some(wsf) = wsm_active {
+                let (exprs, params) = Self::build_white_spark_match_scores(wsf);
+                score_exprs = exprs;
+                score_params = params;
+            }
             String::new()
+        } else if let Some(wsf) = wsm_active {
+            let (sql, mut order_params) = Self::build_white_spark_match_order(wsf, sort);
+            all_params.append(&mut order_params);
+            sql
         } else {
             Self::build_order_clause(sort)
         };
 
-        let sql = if order_clause.is_empty() {
+        let sql = if !score_exprs.is_empty() {
+            // The score subqueries live in the SELECT list, which appears before the WHERE
+            // clause, so their bound params must precede the WHERE params.
+            let mut full_params: Vec<SqlParam> = Vec::new();
+            full_params.append(&mut score_params);
+            full_params.append(&mut all_params);
+            all_params = full_params;
+            format!(
+                "SELECT v.hash, {} FROM veterans v \
+                 LEFT JOIN trainee_data td ON td.id = v.trainee_id \
+                 WHERE v.active = 1 AND v.is_browser = 1 AND ({})",
+                score_exprs.join(", "),
+                where_clause
+            )
+        } else if order_clause.is_empty() {
             format!(
                 "SELECT v.hash FROM veterans v \
                  LEFT JOIN trainee_data td ON td.id = v.trainee_id \
@@ -537,14 +582,38 @@ impl VeteranStore {
             )
         };
 
+        let score_count = score_exprs.len();
+
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| format!("prepare filter query failed: {e}"))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            where_params.iter().map(|p| p.as_ref()).collect();
+            all_params.iter().map(|p| p.as_ref()).collect();
 
-        let mut hashes: Vec<PaginatedVeteranHash> = stmt
-            .query_map(param_refs.as_slice(), |row| {
+        let mut wsm_scores: HashMap<u64, Vec<i64>> = HashMap::new();
+        let mut hashes: Vec<PaginatedVeteranHash> = if score_count > 0 {
+            let mut rows = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    let h: i64 = row.get(0)?;
+                    let mut scores: Vec<i64> = Vec::with_capacity(score_count);
+                    for i in 0..score_count {
+                        scores.push(row.get(i + 1)?);
+                    }
+                    Ok((h as u64, scores))
+                })
+                .map_err(|e| format!("filter query failed: {e}"))?;
+            let mut out = Vec::new();
+            while let Some(r) = rows.next() {
+                let (h, scores) = r.map_err(|e| format!("collect filter results failed: {e}"))?;
+                wsm_scores.insert(h, scores);
+                out.push(PaginatedVeteranHash {
+                    hash: h,
+                    affinity: None,
+                });
+            }
+            out
+        } else {
+            stmt.query_map(param_refs.as_slice(), |row| {
                 let h: i64 = row.get(0)?;
                 Ok(h as u64)
             })
@@ -558,7 +627,8 @@ impl VeteranStore {
                     })
                     .collect()
             })
-            .map_err(|e| format!("collect filter results failed: {e}"))?;
+            .map_err(|e| format!("collect filter results failed: {e}"))?
+        };
 
         // Step 3.5: Load any veteran data missing from the in-memory cache
         self.ensure_loaded(conn, hashes.iter().map(|h| h.hash))?;
@@ -611,16 +681,32 @@ impl VeteranStore {
             scored.retain(|h| h.affinity.map(|r| r.total()).unwrap_or(0) >= min_aff);
         }
 
-        // Sort by affinity
+        // Sort by affinity. When a WhiteSparkMatch filter is active, the white-spark match
+        // scores act as the primary sort key (DESC, in priority order) and affinity is the
+        // tiebreaker on equal scores.
         if sort.key == "Affinity" {
-            match sort.direction.as_str() {
-                "Asc" => scored.sort_by_key(|h| h.affinity.map(|r| r.total())),
-                _ => scored.sort_by(|a, b| {
-                    b.affinity
-                        .map(|r| r.total())
-                        .cmp(&a.affinity.map(|r| r.total()))
-                }),
-            }
+            let asc = sort.direction.as_str() == "Asc";
+            scored.sort_by(|a, b| {
+                if !wsm_scores.is_empty() {
+                    if let (Some(sa), Some(sb)) =
+                        (wsm_scores.get(&a.hash), wsm_scores.get(&b.hash))
+                    {
+                        for (va, vb) in sa.iter().zip(sb.iter()) {
+                            let ord = vb.cmp(va);
+                            if ord != std::cmp::Ordering::Equal {
+                                return ord;
+                            }
+                        }
+                    }
+                }
+                let aa = a.affinity.map(|r| r.total());
+                let bb = b.affinity.map(|r| r.total());
+                if asc {
+                    aa.cmp(&bb)
+                } else {
+                    bb.cmp(&aa)
+                }
+            });
         }
 
         hashes = scored;
@@ -1097,6 +1183,31 @@ impl VeteranStore {
                         ));
                     }
                 }
+                Filter::WhiteSparkMatch(wsf) => {
+                    if !wsf.group_ids.is_empty() {
+                        let (inner, inner_values) = Self::white_spark_match_conditions(wsf);
+                        for v in &inner_values {
+                            params.push(Box::new(v.clone()));
+                        }
+                        if let Some(min) = wsf.min_matched.filter(|m| *m > 0) {
+                            clauses.push(format!(
+                                "(SELECT COUNT(DISTINCT vss.spark_group_id) \
+                                 FROM veteran_spark_summary vss \
+                                 JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+                                 WHERE {}) >= ?",
+                                inner
+                            ));
+                            params.push(Box::new(i64::from(min)));
+                        } else {
+                            clauses.push(format!(
+                                "EXISTS (SELECT 1 FROM veteran_spark_summary vss \
+                                 JOIN spark_data sd ON sd.group_id = vss.spark_group_id \
+                                 WHERE {})",
+                                inner
+                            ));
+                        }
+                    }
+                }
                 Filter::IsIndependentTrainer { is_independent } => {
                     clauses.push(if *is_independent {
                         format!("v.nickname_id = {INDEPENDENT_LEARNER_NICKNAME}")
@@ -1166,6 +1277,112 @@ impl VeteranStore {
              WHERE vss.veteran_hash = v.hash AND {})",
             sub_clauses.join(" AND ")
         ));
+    }
+
+    /// Shared correlated-subquery conditions for a WhiteSparkMatch filter, used by both the
+    /// WHERE clause and the ORDER BY score subqueries. Returns the conditions fragment plus the
+    /// bound values (re-boxed per SQL occurrence).
+    fn white_spark_match_conditions(
+        wsf: &WhiteSparkMatchFilter,
+    ) -> (String, Vec<rusqlite::types::Value>) {
+        let mut conds: Vec<String> = Vec::new();
+        let mut values: Vec<rusqlite::types::Value> = Vec::new();
+
+        conds.push("vss.veteran_hash = v.hash".to_string());
+        conds.push("sd.spark_type IN (4,5)".to_string());
+
+        if !wsf.group_ids.is_empty() {
+            let placeholders: Vec<String> = wsf.group_ids.iter().map(|_| "?".to_string()).collect();
+            conds.push(format!("vss.spark_group_id IN ({})", placeholders.join(",")));
+            for id in &wsf.group_ids {
+                values.push(rusqlite::types::Value::Integer(*id));
+            }
+        }
+
+        if wsf.on_trainee {
+            conds.push("vss.veteran_level_sum > 0".to_string());
+        }
+
+        let level_col = if wsf.on_trainee {
+            "vss.veteran_level_sum"
+        } else {
+            "vss.level_sum"
+        };
+
+        if let Some(min) = wsf.min_stars {
+            conds.push(format!("{} >= ?", level_col));
+            values.push(rusqlite::types::Value::Integer(i64::from(min)));
+        }
+        if let Some(max) = wsf.max_stars {
+            conds.push(format!("{} <= ?", level_col));
+            values.push(rusqlite::types::Value::Integer(i64::from(max)));
+        }
+        if let Some(shared) = wsf.shared_count {
+            conds.push("vss.uma_count >= ?".to_string());
+            values.push(rusqlite::types::Value::Integer(i64::from(shared)));
+        }
+
+        (conds.join(" AND "), values)
+    }
+
+    /// Score subquery expressions (in priority order) + bound params for a WhiteSparkMatch
+    /// filter. Each expression is a correlated subquery against `veteran_spark_summary`.
+    fn build_white_spark_match_scores(
+        wsf: &WhiteSparkMatchFilter,
+    ) -> (Vec<String>, Vec<SqlParam>) {
+        let (inner, inner_values) = Self::white_spark_match_conditions(wsf);
+        let from = "FROM veteran_spark_summary vss \
+                    JOIN spark_data sd ON sd.group_id = vss.spark_group_id";
+        let level_col = if wsf.on_trainee {
+            "vss.veteran_level_sum"
+        } else {
+            "vss.level_sum"
+        };
+
+        let criteria = if wsf.priorities.is_empty() {
+            WhiteSparkMatchCriterion::all().to_vec()
+        } else {
+            wsf.priorities.clone()
+        };
+
+        let mut exprs: Vec<String> = Vec::new();
+        let mut params: Vec<SqlParam> = Vec::new();
+        for c in &criteria {
+            let expr = match c {
+                WhiteSparkMatchCriterion::MatchedCount => format!(
+                    "(SELECT COUNT(DISTINCT vss.spark_group_id) {from} WHERE {inner})"
+                ),
+                WhiteSparkMatchCriterion::UmaCount => format!(
+                    "(SELECT COALESCE(SUM(vss.uma_count), 0) {from} WHERE {inner})"
+                ),
+                WhiteSparkMatchCriterion::TotalStars => format!(
+                    "(SELECT COALESCE(SUM({level_col}), 0) {from} WHERE {inner})"
+                ),
+            };
+            exprs.push(expr);
+            for v in &inner_values {
+                params.push(Box::new(v.clone()));
+            }
+        }
+        (exprs, params)
+    }
+
+    /// ORDER BY for a WhiteSparkMatch filter: DESC score subqueries in priority order
+    /// (default MatchedCount > UmaCount > TotalStars), followed by the regular sort as tiebreaker.
+    fn build_white_spark_match_order(
+        wsf: &WhiteSparkMatchFilter,
+        sort: &SortConfig,
+    ) -> (String, Vec<SqlParam>) {
+        let (exprs, order_params) = Self::build_white_spark_match_scores(wsf);
+        let parts: Vec<String> = exprs.iter().map(|e| format!("{e} DESC")).collect();
+
+        let base = Self::build_order_clause(sort);
+        let order_clause = if parts.is_empty() {
+            base
+        } else {
+            format!("{}, {}", parts.join(", "), base)
+        };
+        (order_clause, order_params)
     }
 
     fn build_order_clause(sort: &SortConfig) -> String {

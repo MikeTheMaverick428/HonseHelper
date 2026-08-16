@@ -22,6 +22,7 @@ pub mod spark_item;
 pub mod support_card_browser;
 pub mod tag_modal;
 pub mod trainee_browser;
+pub mod trainer_browser;
 pub mod veteran_browser;
 pub mod veteran_card;
 pub mod worker_status;
@@ -40,7 +41,6 @@ pub struct StyleDefinition {
 #[derive(Clone, PartialEq)]
 pub enum SelectorType {
     Class,
-    Id,
 }
 
 pub trait Style {
@@ -60,7 +60,6 @@ impl StyleManager {
             .for_each(|def| {
                 let selector = match def.selector_type {
                     SelectorType::Class => format!(".{}", def.class_name),
-                    SelectorType::Id => format!("#{}", def.class_name),
                 };
                 let css = def.css.replace("{{class}}", &selector);
                 css_rules.push(css);

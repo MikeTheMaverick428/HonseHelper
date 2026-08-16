@@ -1,5 +1,5 @@
 use crate::styles::{
-    detail_modal::{SparkColorRowStyle, SparkDetailListStyle},
+    detail_modal::{SparkColorRowStyle, SparkDetailListStyle, SparkWhiteRowStyle},
     spark_item::{
         SparkAptStyle, SparkHighlightedStyle, SparkItemNameStyle, SparkItemStyle,
         SparkItemTotalStyle, SparkItemUmasStyle, SparkItemVeteranStyle, SparkOtherStyle,
@@ -19,23 +19,28 @@ pub struct SparksListProps {
 
 #[function_component]
 pub fn SparksList(props: &SparksListProps) -> Html {
-    let all_sparks_vec = &props.spark_groups;
-
-    let mut blue_sparks: Vec<SparkGroupInfo> = Vec::new();
-    let mut pink_sparks: Vec<SparkGroupInfo> = Vec::new();
-    let mut green_sparks: Vec<SparkGroupInfo> = Vec::new();
-    let mut white_sparks: Vec<SparkGroupInfo> = Vec::new();
-
-    for spark in all_sparks_vec {
-        match spark.spark_type {
-            SparkType::Stat => blue_sparks.push(spark.clone()),
-            SparkType::Aptitude => pink_sparks.push(spark.clone()),
-            SparkType::Unique => green_sparks.push(spark.clone()),
-            _ => white_sparks.push(spark.clone()),
+    let mut rows: Vec<(bool, Vec<SparkGroupInfo>)> = Vec::new();
+    for (is_white, ty) in [
+        (false, SparkType::Stat),
+        (false, SparkType::Aptitude),
+        (false, SparkType::Unique),
+        (true, SparkType::Skill),
+        (true, SparkType::Race),
+        (true, SparkType::Scenario),
+        (true, SparkType::Event),
+    ] {
+        let items: Vec<SparkGroupInfo> = props
+            .spark_groups
+            .iter()
+            .filter(|s| s.spark_type == ty)
+            .cloned()
+            .collect();
+        if !items.is_empty() {
+            rows.push((is_white, items));
         }
     }
 
-    if all_sparks_vec.is_empty() {
+    if props.spark_groups.is_empty() {
         return html! {
             <div class={SparkDetailListStyle::CLASS_NAME}>
                 <p>{"No spark data."}</p>
@@ -45,50 +50,15 @@ pub fn SparksList(props: &SparksListProps) -> Html {
 
     html! {
         <div class={SparkDetailListStyle::CLASS_NAME}>
-            {if !blue_sparks.is_empty() {
+            {for rows.iter().map(|(is_white, sparks)| {
                 html! {
-                    <div class={SparkColorRowStyle::CLASS_NAME}>
-                        {blue_sparks.iter().map(|spark_info| html! {
+                    <div class={classes!(SparkColorRowStyle::CLASS_NAME, is_white.then_some(SparkWhiteRowStyle::CLASS_NAME))}>
+                        {sparks.iter().map(|spark_info| html! {
                             <SparkDisplay key={spark_info.spark_group_id} spark_info={spark_info.clone()} active_spark_filters={props.active_spark_filters.clone()} />
                         }).collect::<Html>()}
                     </div>
                 }
-            } else {
-                html! {}
-            }}
-            {if !pink_sparks.is_empty() {
-                html! {
-                    <div class={SparkColorRowStyle::CLASS_NAME}>
-                        {pink_sparks.iter().map(|spark_info| html! {
-                            <SparkDisplay key={spark_info.spark_group_id} spark_info={spark_info.clone()} active_spark_filters={props.active_spark_filters.clone()} />
-                        }).collect::<Html>()}
-                    </div>
-                }
-            } else {
-                html! {}
-            }}
-            {if !green_sparks.is_empty() {
-                html! {
-                    <div class={SparkColorRowStyle::CLASS_NAME}>
-                        {green_sparks.iter().map(|spark_info| html! {
-                            <SparkDisplay key={spark_info.spark_group_id} spark_info={spark_info.clone()} active_spark_filters={props.active_spark_filters.clone()} />
-                        }).collect::<Html>()}
-                    </div>
-                }
-            } else {
-                html! {}
-            }}
-            {if !white_sparks.is_empty() {
-                html! {
-                    <div class={SparkColorRowStyle::CLASS_NAME}>
-                        {white_sparks.iter().map(|spark_info| html! {
-                            <SparkDisplay key={spark_info.spark_group_id} spark_info={spark_info.clone()} active_spark_filters={props.active_spark_filters.clone()} />
-                        }).collect::<Html>()}
-                    </div>
-                }
-            } else {
-                html! {}
-            }}
+            })}
         </div>
     }
 }

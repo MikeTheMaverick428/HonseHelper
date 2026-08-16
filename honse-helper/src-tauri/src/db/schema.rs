@@ -256,6 +256,43 @@ CREATE TABLE IF NOT EXISTS piece_owned (
 );
 "#;
 
+/// SQL schema for trainers table.
+pub const TRAINERS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS trainers (
+    trainer_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    friend_state INTEGER NOT NULL DEFAULT 0,
+    is_following INTEGER NOT NULL DEFAULT 0,
+    honor_id INTEGER DEFAULT 0,
+    last_login TEXT,
+    comment TEXT DEFAULT '',
+    fan INTEGER DEFAULT 0,
+    circle_id INTEGER DEFAULT 0,
+    circle_name TEXT DEFAULT '',
+    follower_num INTEGER,
+    last_recheck_at TEXT,
+    last_update_source TEXT,
+    borrow_uma_hash INTEGER,
+    borrow_uma_character_id INTEGER,
+    borrow_uma_rarity INTEGER,
+    borrow_uma_rank INTEGER,
+    borrow_uma_rank_score INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
+/// SQL schema for per-trainer borrow support card rows.
+pub const TRAINER_SUPPORT_CARD_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS trainer_support_card (
+    trainer_id INTEGER NOT NULL,
+    support_card_id INTEGER NOT NULL,
+    level INTEGER NOT NULL DEFAULT 0,
+    limit_break_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (trainer_id, support_card_id)
+);
+"#;
+
 /// SQL schema for owned support cards table.
 pub const SUPPORT_CARD_OWNED_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS support_card_owned (
@@ -443,6 +480,8 @@ impl VeteranSchema {
         conn.execute_batch(VETERAN_SUPPORT_CARD_TABLE)?;
         conn.execute_batch(VETERAN_RACE_RESULTS_TABLE)?;
         conn.execute_batch(VETERAN_NICKNAME_IDS_TABLE)?;
+        conn.execute_batch(TRAINERS_TABLE)?;
+        conn.execute_batch(TRAINER_SUPPORT_CARD_TABLE)?;
         Ok(())
     }
 
@@ -517,7 +556,7 @@ mod tests {
 
         // Verify tables exist
         let tables: Vec<String> = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('veterans','veteran_has_win','veteran_has_spark','veteran_spark_summary','veteran_win_count','parents','parent_has_win','parent_has_spark','browser_presets','character_has_trophy','trainee_owned','support_card_owned','tag','veteran_has_tag','race_dump_has_tag','veteran_support_card','veteran_race_results','veteran_nickname_ids');")
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('veterans','veteran_has_win','veteran_has_spark','veteran_spark_summary','veteran_win_count','parents','parent_has_win','parent_has_spark','browser_presets','character_has_trophy','trainee_owned','support_card_owned','tag','veteran_has_tag','race_dump_has_tag','veteran_support_card','veteran_race_results','veteran_nickname_ids','trainers','trainer_support_card');")
             .expect("Failed to query tables")
             .query_map([], |row| row.get(0))
             .expect("Failed to map rows")
@@ -542,6 +581,8 @@ mod tests {
         assert!(tables.contains(&"veteran_support_card".to_string()));
         assert!(tables.contains(&"veteran_race_results".to_string()));
         assert!(tables.contains(&"veteran_nickname_ids".to_string()));
+        assert!(tables.contains(&"trainers".to_string()));
+        assert!(tables.contains(&"trainer_support_card".to_string()));
     }
 
     #[test]

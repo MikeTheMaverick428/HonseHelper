@@ -91,7 +91,7 @@ Lists the white sparks your setup can generate and their probabilities.
 
 - **Filter by name** — text search across spark names
 - **Type toggles** — Skill, Race, and Scenario (only white sparks are listed)
-- Rows are sorted by total stars descending, then name
+- **Sorting** — click a column header to sort; sortable columns are Spark, Type, Legacy Umas, Total Stars, and White (◎ Skill and Gold Skill are not sortable)
 
 Each row shows the spark name, type, number of legacy Umas carrying it, total stars, and three probabilities, which scale with the number of carriers (up to six):
 
@@ -101,9 +101,45 @@ Each row shows the spark name, type, number of legacy Umas carrying it, total st
 
 ## Inspiration Spark Chance Modal
 
-Lists the chance of an inspiration spark firing for each spark group in your setup.
+Aggregates the per-carrier inspiration spark chances (see `multi_event_probability_metrics_guide.md`) into three multi-event metrics per spark group, with no per-carrier breakdown in the table:
+
+- **Expected value** — E[X], sum of each carrier's chance, each clamped at 100% per event
+- **Average Chance** — S_w, weighted rating score with equal weights (simple average chance)
+- **At Least One** — P(≥1), probability that at least one carrier fires the spark (`1 − Π(1−p)`)
+
+Column headers show their formula on hover.
 
 - **Filter by name** — text search across spark names
-- **Career (2 inspirations)** toggle — switches the displayed value between the per-inspiration sparking chance and the chance across a full career of two inspirations
+- **Career (2 inspirations)** toggle — treats each chance as happening twice per career: E[X] doubles, P(≥1) is recomputed over the doubled events, S_w is unchanged
 - **Type toggles** — Stat, Aptitude, Unique, Skill, Race, and Scenario
-- Rows are sorted by chance descending, then name
+- **Sorting** — click a column header to sort; every column is sortable
+
+### How the spark chance is calculated
+
+The per-carrier chance shown in this modal is computed from base chances scaled by the slot's inspiration affinity:
+
+```
+chance = base_chance(spark_type, stars) × (1 + affinity / 100)
+```
+
+**Base chances** depend on the spark type and star count:
+
+| Type | 1★ | 2★ | 3★ |
+| :--- | :---: | :---: | :---: |
+| Stat | 70% | 80% | 90% |
+| Aptitude | 1% | 3% | 5% |
+| Unique | 5% | 10% | 15% |
+| Skill / Race / Scenario | 3% | 6% | 9% |
+
+**Inspiration affinity** per slot is the sum of affinity terms, counting only slots that are actually filled:
+
+- Grandparent slot — `bAff[trainee|parent|grandparent] + Bonus[parent|grandparent]`
+- Parent slot — `bAff[trainee|parent] + bAff[parent1|parent2] + bAff[trainee|parent|grandparent1] + bAff[trainee|parent|grandparent2] + Bonus[parent|grandparent1] + Bonus[parent|grandparent2] + Bonus[parent1|parent2]`
+
+where:
+
+- `bAff[X|Y]` — base pair affinity between two characters
+- `bAff[X|Y|Z]` — base trio affinity among three characters
+- `Bonus[X|Y]` — shared-wins bonus, +3 points per G1 win shared by both characters
+
+Source: [Uma Musume breeding & inspiration affinity guide](https://docs.google.com/document/d/1SW9EqrFVChBv20dZQtFG8Vj8IFWPSXA8aZ61efnYLd4)

@@ -119,6 +119,16 @@ fn handle_request(
                 Err(e) => respond_err(id, &e.to_string()),
             }
         }
+        WorkerCommand::GetSingleModeStartFriends => {
+            let result = (|| {
+                state.ensure_process()?;
+                state.extract_single_mode_start_friends()
+            })();
+            match result {
+                Ok(payload) => respond_ok(id, payload),
+                Err(e) => respond_err(id, &e.to_string()),
+            }
+        }
         WorkerCommand::GetSupportCardData => {
             let result = (|| {
                 state.ensure_process()?;
